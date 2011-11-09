@@ -61,6 +61,9 @@ retry:
         /* Acquire taskq_ent_t's from free list if available */
         if (!list_empty(&tq->tq_free_list) && !(flags & TQ_NEW)) {
                 t = list_entry(tq->tq_free_list.next, taskq_ent_t, t_list);
+
+                ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
+
                 list_del_init(&t->t_list);
                 SRETURN(t);
         }
@@ -608,6 +611,9 @@ __taskq_destroy(taskq_t *tq)
 
         while (!list_empty(&tq->tq_free_list)) {
 		t = list_entry(tq->tq_free_list.next, taskq_ent_t, t_list);
+
+		ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
+
 	        list_del_init(&t->t_list);
                 task_free(tq, t);
         }

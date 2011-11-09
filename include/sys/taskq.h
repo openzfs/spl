@@ -49,14 +49,14 @@
 typedef unsigned long taskqid_t;
 typedef void (task_func_t)(void *);
 
-typedef struct spl_task {
+typedef struct taskq_ent {
         spinlock_t              t_lock;
         struct list_head        t_list;
         taskqid_t               t_id;
         task_func_t             *t_func;
         void                    *t_arg;
         uintptr_t               tqent_flags;
-} spl_task_t;
+} taskq_ent_t;
 
 #define TQENT_FLAG_PREALLOC 0x1
 
@@ -100,7 +100,7 @@ extern taskq_t *system_taskq;
 
 extern taskqid_t __taskq_dispatch(taskq_t *, task_func_t, void *, uint_t);
 /* Special form of taskq dispatch that uses preallocated entries. */
-extern void __taskq_dispatch_ent(taskq_t *, task_func_t, void *, uint_t, spl_task_t *);
+extern void __taskq_dispatch_ent(taskq_t *, task_func_t, void *, uint_t, taskq_ent_t *);
 extern taskq_t *__taskq_create(const char *, int, pri_t, int, int, uint_t);
 extern void __taskq_destroy(taskq_t *);
 extern void __taskq_wait_id(taskq_t *, taskqid_t);

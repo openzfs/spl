@@ -24,6 +24,10 @@
  *  Solaris Porting Layer (SPL) Task Queue Implementation.
 \*****************************************************************************/
 
+/*
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ */
+
 #include <sys/taskq.h>
 #include <sys/kmem.h>
 #include <spl-debug.h>
@@ -37,14 +41,6 @@
 /* Global system-wide dynamic task queue available for all consumers */
 taskq_t *system_taskq;
 EXPORT_SYMBOL(system_taskq);
-
-typedef struct spl_task {
-        spinlock_t              t_lock;
-        struct list_head        t_list;
-        taskqid_t               t_id;
-        task_func_t             *t_func;
-        void                    *t_arg;
-} spl_task_t;
 
 /*
  * NOTE: Must be called with tq->tq_lock held, returns a list_t which
@@ -276,6 +272,9 @@ __taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t flags)
 
 	spin_lock(&t->t_lock);
 
+	/* Make sure we start without any flags */
+	t->tqent_flags = 0;
+
 	/* Queue to the priority list instead of the pending list */
 	if (flags & TQ_FRONT)
 		list_add_tail(&t->t_list, &tq->tq_prio_list);
@@ -294,6 +293,43 @@ out:
 	SRETURN(rc);
 }
 EXPORT_SYMBOL(__taskq_dispatch);
+
+void
+taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
+   spl_task_t *t)
+{
+	SENTRY;
+
+	ASSERT(func != NULL);
+	ASSERT(!(tq->tq_flags & TASKQ_DYNAMIC));
+
+	/*
+	 * Mark it as a prealloc'd task.  This is important
+	 * to ensure that we don't free it later.
+	 */
+	t->tqent_flags |= TQENT_FLAG_PREALLOC;
+	/*
+	 * Enqueue the task to the underlying queue.
+	 */
+	spin_lock(&t->t_lock);
+
+	/* Queue to the priority list instead of the pending list */
+	if (flags & TQ_FRONT)
+		list_add_tail(&t->t_list, &tq->tq_prio_list);
+	else
+		list_add_tail(&t->t_list, &tq->tq_pend_list);
+
+	t->t_id = tq->tq_next_id;
+	tq->tq_next_id++;
+	t->t_func = func;
+	t->t_arg = arg;
+	spin_unlock(&t->t_lock);
+
+	wake_up(&tq->tq_work_waitq);
+
+	SEXIT;
+}
+EXPORT_SYMBOL(__taskq_dispatch_ent);
 
 /*
  * Returns the lowest incomplete taskqid_t.  The taskqid_t may
@@ -366,6 +402,7 @@ taskq_thread(void *args)
         taskq_t *tq = args;
         spl_task_t *t;
 	struct list_head *pend_list;
+	boolean_t freeit;
 	SENTRY;
 
         ASSERT(tq);
@@ -410,6 +447,26 @@ taskq_thread(void *args)
                         list_del_init(&t->t_list);
 			taskq_insert_in_order(tq, t);
                         tq->tq_nactive++;
+
+			/*
+			 * For prealloc'd tasks, we don't free anything.
+			 * We have to check this now, because once we
+			 * call the function for a prealloc'd taskq, we
+			 * can't touch the spl_task any longer (calling
+			 * the function returns the owndership of the
+			 * tqent back to the caller of taskq_dispatch.)
+			 */
+			if ((!(tq->tq_flags & TASKQ_DYNAMIC)) &&
+			    (t->tqent_flags & TQENT_FLAG_PREALLOC)) {
+				/* clear pointers to assist assertion
+				 * checks
+				 */
+				list_del_init(&t->t_list);
+				freeit = B_FALSE;
+			} else {
+				freeit = B_TRUE;
+			}
+
 			spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
 
 			/* Perform the requested task */
@@ -418,7 +475,8 @@ taskq_thread(void *args)
 			spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
                         tq->tq_nactive--;
 			id = t->t_id;
-                        task_done(tq, t);
+			if (freeit)
+				task_done(tq, t);
 
 			/* When the current lowest outstanding taskqid is
 			 * done calculate the new lowest outstanding id */

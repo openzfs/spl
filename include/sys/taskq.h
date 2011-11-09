@@ -22,6 +22,10 @@
  *  with the SPL.  If not, see <http://www.gnu.org/licenses/>.
 \*****************************************************************************/
 
+/*
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ */
+
 #ifndef _SPL_TASKQ_H
 #define _SPL_TASKQ_H
 
@@ -44,6 +48,17 @@
 
 typedef unsigned long taskqid_t;
 typedef void (task_func_t)(void *);
+
+typedef struct spl_task {
+        spinlock_t              t_lock;
+        struct list_head        t_list;
+        taskqid_t               t_id;
+        task_func_t             *t_func;
+        void                    *t_arg;
+        uintptr_t               tqent_flags;
+} spl_task_t;
+
+#define TQENT_FLAG_PREALLOC 0x1
 
 /*
  * Flags for taskq_dispatch. TQ_SLEEP/TQ_NOSLEEP should be same as
@@ -84,6 +99,8 @@ typedef struct taskq {
 extern taskq_t *system_taskq;
 
 extern taskqid_t __taskq_dispatch(taskq_t *, task_func_t, void *, uint_t);
+/* Special form of taskq dispatch that uses preallocated entries. */
+extern void __taskq_dispatch_ent(taskq_t *, task_func_t, void *, uint_t, spl_task_t *);
 extern taskq_t *__taskq_create(const char *, int, pri_t, int, int, uint_t);
 extern void __taskq_destroy(taskq_t *);
 extern void __taskq_wait_id(taskq_t *, taskqid_t);
@@ -97,6 +114,7 @@ void spl_taskq_fini(void);
 #define taskq_wait_id(tq, id)              __taskq_wait_id(tq, id)
 #define taskq_wait(tq)                     __taskq_wait(tq)
 #define taskq_dispatch(tq, f, p, fl)       __taskq_dispatch(tq, f, p, fl)
+#define taskq_dispatch_ent(tq, f, p, fl, t) __taskq_dispatch_ent(tq, f, p, fl, t)
 #define taskq_create(n, th, p, mi, ma, fl) __taskq_create(n, th, p, mi, ma, fl)
 #define taskq_create_proc(n, th, p, mi, ma, pr, fl)	\
 	__taskq_create(n, th, p, mi, ma, fl)

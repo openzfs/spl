@@ -105,6 +105,8 @@ retry:
                 t->t_id = 0;
                 t->t_func = NULL;
                 t->t_arg = NULL;
+                /* Make sure we start without any flags */
+                t->tqent_flags = 0;
                 tq->tq_nalloc++;
         }
 

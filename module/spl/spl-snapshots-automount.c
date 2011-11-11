@@ -28,7 +28,8 @@
 
 
 struct vfsmount *
-linux_kern_mount(struct file_system_type *type, int flags, const char *name, void *data)
+linux_kern_mount(struct file_system_type *type, int flags, const char *name,
+			void *data)
 {
 	struct vfsmount *vfs_mnt = NULL;
 	vfs_mnt = vfs_kern_mount(type, flags, name, data);
@@ -51,5 +52,6 @@ linux_add_mount(struct vfsmount *newmnt, struct nameidata *nd,
 	
 	return ret;
 }
+EXPORT_SYMBOL(linux_add_mount);
 #endif
 

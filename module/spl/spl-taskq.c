@@ -38,14 +38,6 @@
 taskq_t *system_taskq;
 EXPORT_SYMBOL(system_taskq);
 
-typedef struct taskq_ent {
-        spinlock_t              tqent_lock;
-        struct list_head        tqent_list;
-        taskqid_t               tqent_id;
-        task_func_t             *tqent_func;
-        void                    *tqent_arg;
-} taskq_ent_t;
-
 /*
  * NOTE: Must be called with tq->tq_lock held, returns a list_t which
  * is not attached to the free, work, or pending taskq lists.
@@ -65,6 +57,9 @@ retry:
         /* Acquire taskq_ent_t's from free list if available */
         if (!list_empty(&tq->tq_free_list) && !(flags & TQ_NEW)) {
                 t = list_entry(tq->tq_free_list.next, taskq_ent_t, tqent_list);
+
+                ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
+
                 list_del_init(&t->tqent_list);
                 SRETURN(t);
         }
@@ -106,6 +101,7 @@ retry:
                 t->tqent_id = 0;
                 t->tqent_func = NULL;
                 t->tqent_arg = NULL;
+                t->tqent_flags = 0;
                 tq->tq_nalloc++;
         }
 
@@ -146,10 +142,23 @@ task_done(taskq_t *tq, taskq_ent_t *t)
 
 	list_del_init(&t->tqent_list);
 
+	/*
+	 * For prealloc'd tasks, we don't free anything.
+	 * We have to check this now, because once we
+	 * call the function for a prealloc'd taskq, we
+	 * can't touch the taskq_ent any longer (calling
+	 * the function returns the owndership of the
+	 * tqent back to the caller of taskq_dispatch.)
+	 */
+	if ((!(tq->tq_flags & TASKQ_DYNAMIC)) &&
+	    (t->tqent_flags & TQENT_FLAG_PREALLOC))
+		return;
+
         if (tq->tq_nalloc <= tq->tq_minalloc) {
 		t->tqent_id = 0;
 		t->tqent_func = NULL;
 		t->tqent_arg = NULL;
+		t->tqent_flags = 0;
                 list_add_tail(&t->tqent_list, &tq->tq_free_list);
 	} else {
 		task_free(tq, t);
@@ -286,6 +295,9 @@ __taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t flags)
 	tq->tq_next_id++;
         t->tqent_func = func;
         t->tqent_arg = arg;
+
+	ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
+
 	spin_unlock(&t->tqent_lock);
 
 	wake_up(&tq->tq_work_waitq);
@@ -294,6 +306,52 @@ out:
 	SRETURN(rc);
 }
 EXPORT_SYMBOL(__taskq_dispatch);
+
+void
+__taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
+   taskq_ent_t *t)
+{
+	SENTRY;
+
+	ASSERT(tq);
+	ASSERT(func);
+	ASSERT(!(tq->tq_flags & TASKQ_DYNAMIC));
+
+	spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
+
+	/* Taskq being destroyed and all tasks drained */
+	if (!(tq->tq_flags & TQ_ACTIVE))
+		goto exit;
+
+	spin_lock(&t->tqent_lock);
+
+	/*
+	 * Mark it as a prealloc'd task.  This is important
+	 * to ensure that we don't free it later.
+	 */
+	t->tqent_flags |= TQENT_FLAG_PREALLOC;
+
+	/* Queue to the priority list instead of the pending list */
+	if (flags & TQ_FRONT)
+		list_add_tail(&t->tqent_list, &tq->tq_prio_list);
+	else
+		list_add_tail(&t->tqent_list, &tq->tq_pend_list);
+
+	t->tqent_id = tq->tq_next_id;
+	tq->tq_next_id++;
+	t->tqent_func = func;
+	t->tqent_arg = arg;
+
+	spin_unlock(&t->tqent_lock);
+	wake_up(&tq->tq_work_waitq);
+
+exit:
+	spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
+
+	SEXIT;
+}
+EXPORT_SYMBOL(__taskq_dispatch_ent);
+
 /*
  * Returns the lowest incomplete taskqid_t.  The taskqid_t may
  * be queued on the pending list, on the priority list,  or on
@@ -549,6 +607,9 @@ __taskq_destroy(taskq_t *tq)
 
         while (!list_empty(&tq->tq_free_list)) {
 		t = list_entry(tq->tq_free_list.next, taskq_ent_t, tqent_list);
+
+		ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
+
 	        list_del_init(&t->tqent_list);
                 task_free(tq, t);
         }

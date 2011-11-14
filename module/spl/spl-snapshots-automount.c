@@ -39,7 +39,7 @@ EXPORT_SYMBOL(linux_kern_mount);
 
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
-int 
+int
 linux_add_mount(struct vfsmount *newmnt, struct nameidata *nd,
 		int mnt_flags, struct list_head *fslist)
 {
@@ -49,7 +49,7 @@ linux_add_mount(struct vfsmount *newmnt, struct nameidata *nd,
 #else
 	ret = do_add_mount(newmnt, &nd->path, mnt_flags, fslist);
 #endif
-	
+
 	return ret;
 }
 EXPORT_SYMBOL(linux_add_mount);

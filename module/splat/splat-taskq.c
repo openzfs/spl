@@ -87,11 +87,14 @@ splat_taskq_test13_func(void *arg)
 }
 
 static int
-splat_taskq_test1(struct file *file, void *arg)
+splat_taskq_test1_impl(struct file *file, void *arg, boolean_t prealloc)
 {
 	taskq_t *tq;
 	taskqid_t id;
 	splat_taskq_arg_t tq_arg;
+	taskq_ent_t tqe;
+
+	memset(&tqe, 0, sizeof(tqe));
 
 	splat_vprint(file, SPLAT_TASKQ_TEST1_NAME, "Taskq '%s' creating\n",
 	           SPLAT_TASKQ_TEST1_NAME);
@@ -111,7 +114,11 @@ splat_taskq_test1(struct file *file, void *arg)
 	splat_vprint(file, SPLAT_TASKQ_TEST1_NAME,
 	           "Taskq '%s' function '%s' dispatching\n",
 	           tq_arg.name, sym2str(splat_taskq_test13_func));
-	if ((id = taskq_dispatch(tq, splat_taskq_test13_func,
+	if (prealloc) {
+		taskq_dispatch_ent(tq, splat_taskq_test13_func,
+		                   &tq_arg, TQ_SLEEP, &tqe);
+		id = tqe.tqent_id;
+	} else if ((id = taskq_dispatch(tq, splat_taskq_test13_func,
 				 &tq_arg, TQ_SLEEP)) == 0) {
 		splat_vprint(file, SPLAT_TASKQ_TEST1_NAME,
 		           "Taskq '%s' function '%s' dispatch failed\n",
@@ -125,9 +132,24 @@ splat_taskq_test1(struct file *file, void *arg)
 	taskq_wait(tq);
 	splat_vprint(file, SPLAT_TASKQ_TEST1_NAME, "Taskq '%s' destroying\n",
 	           tq_arg.name);
+
 	taskq_destroy(tq);
 
 	return (tq_arg.flag) ? 0 : -EINVAL;
+}
+
+static int
+splat_taskq_test1(struct file *file, void *arg)
+{
+	int rc;
+
+	rc = splat_taskq_test1_impl(file, arg, B_FALSE);
+	if (rc)
+		return rc;
+
+	rc = splat_taskq_test1_impl(file, arg, B_TRUE);
+
+	return rc;
 }
 
 /*
@@ -168,11 +190,16 @@ splat_taskq_test2_func2(void *arg)
 #define TEST2_THREADS_PER_TASKQ         1
 
 static int
-splat_taskq_test2(struct file *file, void *arg) {
+splat_taskq_test2_impl(struct file *file, void *arg, boolean_t prealloc) {
 	taskq_t *tq[TEST2_TASKQS] = { NULL };
 	taskqid_t id;
 	splat_taskq_arg_t tq_args[TEST2_TASKQS];
+	taskq_ent_t func1_tqes[TEST2_TASKQS];
+	taskq_ent_t func2_tqes[TEST2_TASKQS];
 	int i, rc = 0;
+
+	memset(&func1_tqes, 0, sizeof(func1_tqes));
+	memset(&func2_tqes, 0, sizeof(func2_tqes));
 
 	for (i = 0; i < TEST2_TASKQS; i++) {
 
@@ -198,7 +225,11 @@ splat_taskq_test2(struct file *file, void *arg) {
 		           "Taskq '%s/%d' function '%s' dispatching\n",
 			   tq_args[i].name, tq_args[i].id,
 		           sym2str(splat_taskq_test2_func1));
-		if ((id = taskq_dispatch(
+		if (prealloc) {
+			taskq_dispatch_ent(tq[i], splat_taskq_test2_func1,
+			                   &tq_args[i], TQ_SLEEP, &func1_tqes[i]);
+			id = func1_tqes[i].tqent_id;
+		} else if ((id = taskq_dispatch(
 		     tq[i], splat_taskq_test2_func1,
 		     &tq_args[i], TQ_SLEEP)) == 0) {
 			splat_vprint(file, SPLAT_TASKQ_TEST2_NAME,
@@ -213,7 +244,11 @@ splat_taskq_test2(struct file *file, void *arg) {
 		           "Taskq '%s/%d' function '%s' dispatching\n",
 			   tq_args[i].name, tq_args[i].id,
 		           sym2str(splat_taskq_test2_func2));
-		if ((id = taskq_dispatch(
+		if (prealloc) {
+			taskq_dispatch_ent(tq[i], splat_taskq_test2_func2,
+			                   &tq_args[i], TQ_SLEEP, &func2_tqes[i]);
+			id = func2_tqes[i].tqent_id;
+		} else if ((id = taskq_dispatch(
 		     tq[i], splat_taskq_test2_func2,
 		     &tq_args[i], TQ_SLEEP)) == 0) {
 			splat_vprint(file, SPLAT_TASKQ_TEST2_NAME,
@@ -236,6 +271,7 @@ splat_taskq_test2(struct file *file, void *arg) {
 			splat_vprint(file, SPLAT_TASKQ_TEST2_NAME,
 			           "Taskq '%s/%d; destroying\n",
 			          tq_args[i].name, tq_args[i].id);
+
 			taskq_destroy(tq[i]);
 
 			if (!rc && tq_args[i].flag != ((i * 2) + 1)) {
@@ -258,15 +294,31 @@ splat_taskq_test2(struct file *file, void *arg) {
 	return rc;
 }
 
+static int
+splat_taskq_test2(struct file *file, void *arg) {
+	int rc;
+
+	rc = splat_taskq_test2_impl(file, arg, B_FALSE);
+	if (rc)
+		return rc;
+
+	rc = splat_taskq_test2_impl(file, arg, B_TRUE);
+
+	return rc;
+}
+
 /*
  * Use the global system task queue with a single task, wait until task
  * completes, ensure task ran properly.
  */
 static int
-splat_taskq_test3(struct file *file, void *arg)
+splat_taskq_test3_impl(struct file *file, void *arg, boolean_t prealloc)
 {
 	taskqid_t id;
 	splat_taskq_arg_t tq_arg;
+	taskq_ent_t tqe;
+
+	memset(&tqe, 0, sizeof(tqe));
 
 	tq_arg.flag = 0;
 	tq_arg.id   = 0;
@@ -276,7 +328,11 @@ splat_taskq_test3(struct file *file, void *arg)
 	splat_vprint(file, SPLAT_TASKQ_TEST3_NAME,
 	           "Taskq '%s' function '%s' dispatching\n",
 	           tq_arg.name, sym2str(splat_taskq_test13_func));
-	if ((id = taskq_dispatch(system_taskq, splat_taskq_test13_func,
+	if (prealloc) {
+		taskq_dispatch_ent(system_taskq, splat_taskq_test13_func,
+		                   &tq_arg, TQ_SLEEP, &tqe);
+		id = tqe.tqent_id;
+	} else if ((id = taskq_dispatch(system_taskq, splat_taskq_test13_func,
 				 &tq_arg, TQ_SLEEP)) == 0) {
 		splat_vprint(file, SPLAT_TASKQ_TEST3_NAME,
 		           "Taskq '%s' function '%s' dispatch failed\n",
@@ -289,6 +345,20 @@ splat_taskq_test3(struct file *file, void *arg)
 	taskq_wait(system_taskq);
 
 	return (tq_arg.flag) ? 0 : -EINVAL;
+}
+
+static int
+splat_taskq_test3(struct file *file, void *arg)
+{
+	int rc;
+
+	rc = splat_taskq_test3_impl(file, arg, B_FALSE);
+	if (rc)
+		return rc;
+
+	rc = splat_taskq_test3_impl(file, arg, B_TRUE);
+
+	return rc;
 }
 
 /*
@@ -312,11 +382,16 @@ splat_taskq_test4_func(void *arg)
 
 static int
 splat_taskq_test4_common(struct file *file, void *arg, int minalloc,
-                         int maxalloc, int nr_tasks)
+                         int maxalloc, int nr_tasks, boolean_t prealloc)
 {
 	taskq_t *tq;
 	splat_taskq_arg_t tq_arg;
+	taskq_ent_t *tqes;
 	int i, j, rc = 0;
+
+	tqes = kmalloc(sizeof(*tqes) * nr_tasks, GFP_KERNEL);
+	if (tqes == NULL)
+		return -ENOMEM;
 
 	splat_vprint(file, SPLAT_TASKQ_TEST4_NAME, "Taskq '%s' creating "
 	             "(%d/%d/%d)\n", SPLAT_TASKQ_TEST4_NAME, minalloc, maxalloc,
@@ -326,20 +401,26 @@ splat_taskq_test4_common(struct file *file, void *arg, int minalloc,
 		splat_vprint(file, SPLAT_TASKQ_TEST4_NAME,
 		             "Taskq '%s' create failed\n",
 		             SPLAT_TASKQ_TEST4_NAME);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto out_free;
 	}
 
 	tq_arg.file = file;
 	tq_arg.name = SPLAT_TASKQ_TEST4_NAME;
 
 	for (i = 1; i <= nr_tasks; i *= 2) {
+		memset(tqes, 0, sizeof(*tqes) * i);
+
 		atomic_set(&tq_arg.count, 0);
 		splat_vprint(file, SPLAT_TASKQ_TEST4_NAME,
 		             "Taskq '%s' function '%s' dispatched %d times\n",
 		             tq_arg.name, sym2str(splat_taskq_test4_func), i);
 
 		for (j = 0; j < i; j++) {
-			if ((taskq_dispatch(tq, splat_taskq_test4_func,
+			if (prealloc) {
+				taskq_dispatch_ent(tq, splat_taskq_test4_func,
+				                   &tq_arg, TQ_SLEEP, &tqes[j]);
+			} else if ((taskq_dispatch(tq, splat_taskq_test4_func,
 			                    &tq_arg, TQ_SLEEP)) == 0) {
 				splat_vprint(file, SPLAT_TASKQ_TEST4_NAME,
 				        "Taskq '%s' function '%s' dispatch "
@@ -367,20 +448,35 @@ out:
 	           tq_arg.name);
 	taskq_destroy(tq);
 
+out_free:
+	kfree(tqes);
+
 	return rc;
 }
 
-static int splat_taskq_test4(struct file *file, void *arg)
+static int
+splat_taskq_test4_impl(struct file *file, void *arg, boolean_t prealloc)
 {
 	int rc;
 
-	rc = splat_taskq_test4_common(file, arg, 50, INT_MAX, 1024);
+	rc = splat_taskq_test4_common(file, arg, 50, INT_MAX, 1024, prealloc);
 	if (rc)
 		return rc;
 
-	rc = splat_taskq_test4_common(file, arg, 1, 1, 32);
+	rc = splat_taskq_test4_common(file, arg, 1, 1, 32, prealloc);
 
 	return rc;
+}
+
+static int
+splat_taskq_test4(struct file *file, void *arg)
+{
+	int rc;
+
+	if ((rc = splat_taskq_test4_impl(file, arg, B_FALSE)) != 0)
+		return rc;
+
+	return splat_taskq_test4_impl(file, arg, B_TRUE);
 }
 
 /*
@@ -491,7 +587,7 @@ splat_taskq_test_order(splat_taskq_arg_t *tq_arg, int *order)
 }
 
 static int
-splat_taskq_test5(struct file *file, void *arg)
+splat_taskq_test5_impl(struct file *file, void *arg, boolean_t prealloc)
 {
 	taskq_t *tq;
 	taskqid_t id;
@@ -499,7 +595,10 @@ splat_taskq_test5(struct file *file, void *arg)
 	splat_taskq_arg_t tq_arg;
 	int order1[SPLAT_TASKQ_ORDER_MAX] = { 1,2,4,5,3,0,0,0 };
 	int order2[SPLAT_TASKQ_ORDER_MAX] = { 1,2,4,5,3,8,6,7 };
+	taskq_ent_t tqes[SPLAT_TASKQ_ORDER_MAX];
 	int i, rc = 0;
+
+	memset(&tqes, 0, sizeof(tqes));
 
 	splat_vprint(file, SPLAT_TASKQ_TEST5_NAME, "Taskq '%s' creating\n",
 		     SPLAT_TASKQ_TEST5_NAME);
@@ -521,7 +620,11 @@ splat_taskq_test5(struct file *file, void *arg)
 		tq_id[i].id = i + 1;
 		tq_id[i].arg = &tq_arg;
 
-		if ((id = taskq_dispatch(tq, splat_taskq_test5_func,
+		if (prealloc) {
+			taskq_dispatch_ent(tq, splat_taskq_test5_func,
+			               &tq_id[i], TQ_SLEEP, &tqes[i]);
+			id = tqes[i].tqent_id;
+		} else if ((id = taskq_dispatch(tq, splat_taskq_test5_func,
 		                         &tq_id[i], TQ_SLEEP)) == 0) {
 			splat_vprint(file, SPLAT_TASKQ_TEST5_NAME,
 			        "Taskq '%s' function '%s' dispatch failed\n",
@@ -554,6 +657,20 @@ out:
 	splat_vprint(file, SPLAT_TASKQ_TEST5_NAME,
 		     "Taskq '%s' destroying\n", tq_arg.name);
 	taskq_destroy(tq);
+
+	return rc;
+}
+
+static int
+splat_taskq_test5(struct file *file, void *arg)
+{
+	int rc;
+
+	rc = splat_taskq_test5_impl(file, arg, B_FALSE);
+	if (rc)
+		return rc;
+
+	rc = splat_taskq_test5_impl(file, arg, B_TRUE);
 
 	return rc;
 }
@@ -617,15 +734,18 @@ splat_taskq_test6_func(void *arg)
 }
 
 static int
-splat_taskq_test6(struct file *file, void *arg)
+splat_taskq_test6_impl(struct file *file, void *arg, boolean_t prealloc)
 {
 	taskq_t *tq;
 	taskqid_t id;
 	splat_taskq_id_t tq_id[SPLAT_TASKQ_ORDER_MAX];
 	splat_taskq_arg_t tq_arg;
 	int order[SPLAT_TASKQ_ORDER_MAX] = { 1,2,3,6,7,8,4,5 };
+	taskq_ent_t tqes[SPLAT_TASKQ_ORDER_MAX];
 	int i, rc = 0;
 	uint_t tflags;
+
+	memset(&tqes, 0, sizeof(tqes));
 
 	splat_vprint(file, SPLAT_TASKQ_TEST6_NAME, "Taskq '%s' creating\n",
 		     SPLAT_TASKQ_TEST6_NAME);
@@ -650,7 +770,11 @@ splat_taskq_test6(struct file *file, void *arg)
 		if (i > 4)
 			tflags |= TQ_FRONT;
 
-		if ((id = taskq_dispatch(tq, splat_taskq_test6_func,
+		if (prealloc) {
+			taskq_dispatch_ent(tq, splat_taskq_test6_func,
+			                   &tq_id[i], tflags, &tqes[i]);
+			id = tqes[i].tqent_id;
+		} else if ((id = taskq_dispatch(tq, splat_taskq_test6_func,
 		                         &tq_id[i], tflags)) == 0) {
 			splat_vprint(file, SPLAT_TASKQ_TEST6_NAME,
 			        "Taskq '%s' function '%s' dispatch failed\n",
@@ -681,6 +805,20 @@ out:
 	splat_vprint(file, SPLAT_TASKQ_TEST6_NAME,
 		     "Taskq '%s' destroying\n", tq_arg.name);
 	taskq_destroy(tq);
+
+	return rc;
+}
+
+static int
+splat_taskq_test6(struct file *file, void *arg)
+{
+	int rc;
+
+	rc = splat_taskq_test6_impl(file, arg, B_FALSE);
+	if (rc)
+		return rc;
+
+	rc = splat_taskq_test6_impl(file, arg, B_TRUE);
 
 	return rc;
 }

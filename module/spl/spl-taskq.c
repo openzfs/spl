@@ -38,22 +38,14 @@
 taskq_t *system_taskq;
 EXPORT_SYMBOL(system_taskq);
 
-typedef struct spl_task {
-        spinlock_t              t_lock;
-        struct list_head        t_list;
-        taskqid_t               t_id;
-        task_func_t             *t_func;
-        void                    *t_arg;
-} spl_task_t;
-
 /*
  * NOTE: Must be called with tq->tq_lock held, returns a list_t which
  * is not attached to the free, work, or pending taskq lists.
  */
-static spl_task_t *
+static taskq_ent_t *
 task_alloc(taskq_t *tq, uint_t flags)
 {
-        spl_task_t *t;
+        taskq_ent_t *t;
         int count = 0;
         SENTRY;
 
@@ -62,10 +54,13 @@ task_alloc(taskq_t *tq, uint_t flags)
         ASSERT(!((flags & TQ_SLEEP) && (flags & TQ_NOSLEEP))); /* Not both */
         ASSERT(spin_is_locked(&tq->tq_lock));
 retry:
-        /* Acquire spl_task_t's from free list if available */
+        /* Acquire taskq_ent_t's from free list if available */
         if (!list_empty(&tq->tq_free_list) && !(flags & TQ_NEW)) {
-                t = list_entry(tq->tq_free_list.next, spl_task_t, t_list);
-                list_del_init(&t->t_list);
+                t = list_entry(tq->tq_free_list.next, taskq_ent_t, tqent_list);
+
+                ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
+
+                list_del_init(&t->tqent_list);
                 SRETURN(t);
         }
 
@@ -73,15 +68,15 @@ retry:
         if (flags & TQ_NOALLOC)
                 SRETURN(NULL);
 
-        /* Hit maximum spl_task_t pool size */
+        /* Hit maximum taskq_ent_t pool size */
         if (tq->tq_nalloc >= tq->tq_maxalloc) {
                 if (flags & TQ_NOSLEEP)
                         SRETURN(NULL);
 
                 /*
                  * Sleep periodically polling the free list for an available
-                 * spl_task_t. Dispatching with TQ_SLEEP should always succeed
-                 * but we cannot block forever waiting for an spl_taskq_t to
+                 * taskq_ent_t. Dispatching with TQ_SLEEP should always succeed
+                 * but we cannot block forever waiting for an taskq_entq_t to
                  * show up in the free list, otherwise a deadlock can happen.
                  *
                  * Therefore, we need to allocate a new task even if the number
@@ -97,15 +92,16 @@ retry:
         }
 
         spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
-        t = kmem_alloc(sizeof(spl_task_t), flags & (TQ_SLEEP | TQ_NOSLEEP));
+        t = kmem_alloc(sizeof(taskq_ent_t), flags & (TQ_SLEEP | TQ_NOSLEEP));
         spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
 
         if (t) {
-                spin_lock_init(&t->t_lock);
-                INIT_LIST_HEAD(&t->t_list);
-                t->t_id = 0;
-                t->t_func = NULL;
-                t->t_arg = NULL;
+                spin_lock_init(&t->tqent_lock);
+                INIT_LIST_HEAD(&t->tqent_list);
+                t->tqent_id = 0;
+                t->tqent_func = NULL;
+                t->tqent_arg = NULL;
+                t->tqent_flags = 0;
                 tq->tq_nalloc++;
         }
 
@@ -113,20 +109,20 @@ retry:
 }
 
 /*
- * NOTE: Must be called with tq->tq_lock held, expects the spl_task_t
+ * NOTE: Must be called with tq->tq_lock held, expects the taskq_ent_t
  * to already be removed from the free, work, or pending taskq lists.
  */
 static void
-task_free(taskq_t *tq, spl_task_t *t)
+task_free(taskq_t *tq, taskq_ent_t *t)
 {
         SENTRY;
 
         ASSERT(tq);
         ASSERT(t);
 	ASSERT(spin_is_locked(&tq->tq_lock));
-	ASSERT(list_empty(&t->t_list));
+	ASSERT(list_empty(&t->tqent_list));
 
-        kmem_free(t, sizeof(spl_task_t));
+        kmem_free(t, sizeof(taskq_ent_t));
         tq->tq_nalloc--;
 
 	SEXIT;
@@ -134,23 +130,36 @@ task_free(taskq_t *tq, spl_task_t *t)
 
 /*
  * NOTE: Must be called with tq->tq_lock held, either destroys the
- * spl_task_t if too many exist or moves it to the free list for later use.
+ * taskq_ent_t if too many exist or moves it to the free list for later use.
  */
 static void
-task_done(taskq_t *tq, spl_task_t *t)
+task_done(taskq_t *tq, taskq_ent_t *t)
 {
 	SENTRY;
 	ASSERT(tq);
 	ASSERT(t);
 	ASSERT(spin_is_locked(&tq->tq_lock));
 
-	list_del_init(&t->t_list);
+	list_del_init(&t->tqent_list);
+
+	/*
+	 * For prealloc'd tasks, we don't free anything.
+	 * We have to check this now, because once we
+	 * call the function for a prealloc'd taskq, we
+	 * can't touch the taskq_ent any longer (calling
+	 * the function returns the owndership of the
+	 * tqent back to the caller of taskq_dispatch.)
+	 */
+	if ((!(tq->tq_flags & TASKQ_DYNAMIC)) &&
+	    (t->tqent_flags & TQENT_FLAG_PREALLOC))
+		return;
 
         if (tq->tq_nalloc <= tq->tq_minalloc) {
-		t->t_id = 0;
-		t->t_func = NULL;
-		t->t_arg = NULL;
-                list_add_tail(&t->t_list, &tq->tq_free_list);
+		t->tqent_id = 0;
+		t->tqent_func = NULL;
+		t->tqent_arg = NULL;
+		t->tqent_flags = 0;
+                list_add_tail(&t->tqent_list, &tq->tq_free_list);
 	} else {
 		task_free(tq, t);
 	}
@@ -245,7 +254,7 @@ EXPORT_SYMBOL(__taskq_member);
 taskqid_t
 __taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t flags)
 {
-        spl_task_t *t;
+        taskq_ent_t *t;
 	taskqid_t rc = 0;
         SENTRY;
 
@@ -274,19 +283,22 @@ __taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t flags)
         if ((t = task_alloc(tq, flags)) == NULL)
 		SGOTO(out, rc = 0);
 
-	spin_lock(&t->t_lock);
+	spin_lock(&t->tqent_lock);
 
 	/* Queue to the priority list instead of the pending list */
 	if (flags & TQ_FRONT)
-		list_add_tail(&t->t_list, &tq->tq_prio_list);
+		list_add_tail(&t->tqent_list, &tq->tq_prio_list);
 	else
-		list_add_tail(&t->t_list, &tq->tq_pend_list);
+		list_add_tail(&t->tqent_list, &tq->tq_pend_list);
 
-	t->t_id = rc = tq->tq_next_id;
+	t->tqent_id = rc = tq->tq_next_id;
 	tq->tq_next_id++;
-        t->t_func = func;
-        t->t_arg = arg;
-	spin_unlock(&t->t_lock);
+        t->tqent_func = func;
+        t->tqent_arg = arg;
+
+	ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
+
+	spin_unlock(&t->tqent_lock);
 
 	wake_up(&tq->tq_work_waitq);
 out:
@@ -294,6 +306,51 @@ out:
 	SRETURN(rc);
 }
 EXPORT_SYMBOL(__taskq_dispatch);
+
+void
+__taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
+   taskq_ent_t *t)
+{
+	SENTRY;
+
+	ASSERT(tq);
+	ASSERT(func);
+	ASSERT(!(tq->tq_flags & TASKQ_DYNAMIC));
+
+	spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
+
+	/* Taskq being destroyed and all tasks drained */
+	if (!(tq->tq_flags & TQ_ACTIVE))
+		goto exit;
+
+	spin_lock(&t->tqent_lock);
+
+	/*
+	 * Mark it as a prealloc'd task.  This is important
+	 * to ensure that we don't free it later.
+	 */
+	t->tqent_flags |= TQENT_FLAG_PREALLOC;
+
+	/* Queue to the priority list instead of the pending list */
+	if (flags & TQ_FRONT)
+		list_add_tail(&t->tqent_list, &tq->tq_prio_list);
+	else
+		list_add_tail(&t->tqent_list, &tq->tq_pend_list);
+
+	t->tqent_id = tq->tq_next_id;
+	tq->tq_next_id++;
+	t->tqent_func = func;
+	t->tqent_arg = arg;
+
+	spin_unlock(&t->tqent_lock);
+	wake_up(&tq->tq_work_waitq);
+
+exit:
+	spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
+
+	SEXIT;
+}
+EXPORT_SYMBOL(__taskq_dispatch_ent);
 
 /*
  * Returns the lowest incomplete taskqid_t.  The taskqid_t may
@@ -305,25 +362,25 @@ static taskqid_t
 taskq_lowest_id(taskq_t *tq)
 {
 	taskqid_t lowest_id = tq->tq_next_id;
-        spl_task_t *t;
+        taskq_ent_t *t;
 	SENTRY;
 
 	ASSERT(tq);
 	ASSERT(spin_is_locked(&tq->tq_lock));
 
 	if (!list_empty(&tq->tq_pend_list)) {
-		t = list_entry(tq->tq_pend_list.next, spl_task_t, t_list);
-		lowest_id = MIN(lowest_id, t->t_id);
+		t = list_entry(tq->tq_pend_list.next, taskq_ent_t, tqent_list);
+		lowest_id = MIN(lowest_id, t->tqent_id);
 	}
 
 	if (!list_empty(&tq->tq_prio_list)) {
-		t = list_entry(tq->tq_prio_list.next, spl_task_t, t_list);
-		lowest_id = MIN(lowest_id, t->t_id);
+		t = list_entry(tq->tq_prio_list.next, taskq_ent_t, tqent_list);
+		lowest_id = MIN(lowest_id, t->tqent_id);
 	}
 
 	if (!list_empty(&tq->tq_work_list)) {
-		t = list_entry(tq->tq_work_list.next, spl_task_t, t_list);
-		lowest_id = MIN(lowest_id, t->t_id);
+		t = list_entry(tq->tq_work_list.next, taskq_ent_t, tqent_list);
+		lowest_id = MIN(lowest_id, t->tqent_id);
 	}
 
 	SRETURN(lowest_id);
@@ -334,9 +391,9 @@ taskq_lowest_id(taskq_t *tq)
  * taskqid.
  */
 static void
-taskq_insert_in_order(taskq_t *tq, spl_task_t *t)
+taskq_insert_in_order(taskq_t *tq, taskq_ent_t *t)
 {
-	spl_task_t *w;
+	taskq_ent_t *w;
 	struct list_head *l;
 
 	SENTRY;
@@ -345,14 +402,14 @@ taskq_insert_in_order(taskq_t *tq, spl_task_t *t)
 	ASSERT(spin_is_locked(&tq->tq_lock));
 
 	list_for_each_prev(l, &tq->tq_work_list) {
-		w = list_entry(l, spl_task_t, t_list);
-		if (w->t_id < t->t_id) {
-			list_add(&t->t_list, l);
+		w = list_entry(l, taskq_ent_t, tqent_list);
+		if (w->tqent_id < t->tqent_id) {
+			list_add(&t->tqent_list, l);
 			break;
 		}
 	}
 	if (l == &tq->tq_work_list)
-		list_add(&t->t_list, &tq->tq_work_list);
+		list_add(&t->tqent_list, &tq->tq_work_list);
 
 	SEXIT;
 }
@@ -364,7 +421,7 @@ taskq_thread(void *args)
         sigset_t blocked;
 	taskqid_t id;
         taskq_t *tq = args;
-        spl_task_t *t;
+        taskq_ent_t *t;
 	struct list_head *pend_list;
 	SENTRY;
 
@@ -406,18 +463,18 @@ taskq_thread(void *args)
 			pend_list = NULL;
 
 		if (pend_list) {
-                        t = list_entry(pend_list->next, spl_task_t, t_list);
-                        list_del_init(&t->t_list);
+                        t = list_entry(pend_list->next, taskq_ent_t, tqent_list);
+                        list_del_init(&t->tqent_list);
 			taskq_insert_in_order(tq, t);
                         tq->tq_nactive++;
 			spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
 
 			/* Perform the requested task */
-                        t->t_func(t->t_arg);
+                        t->tqent_func(t->tqent_arg);
 
 			spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
                         tq->tq_nactive--;
-			id = t->t_id;
+			id = t->tqent_id;
                         task_done(tq, t);
 
 			/* When the current lowest outstanding taskqid is
@@ -529,7 +586,7 @@ EXPORT_SYMBOL(__taskq_create);
 void
 __taskq_destroy(taskq_t *tq)
 {
-	spl_task_t *t;
+	taskq_ent_t *t;
 	int i, nthreads;
 	SENTRY;
 
@@ -549,8 +606,11 @@ __taskq_destroy(taskq_t *tq)
         spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
 
         while (!list_empty(&tq->tq_free_list)) {
-		t = list_entry(tq->tq_free_list.next, spl_task_t, t_list);
-	        list_del_init(&t->t_list);
+		t = list_entry(tq->tq_free_list.next, taskq_ent_t, tqent_list);
+
+		ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
+
+	        list_del_init(&t->tqent_list);
                 task_free(tq, t);
         }
 
@@ -562,7 +622,7 @@ __taskq_destroy(taskq_t *tq)
         ASSERT(list_empty(&tq->tq_prio_list));
 
         spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
-        kmem_free(tq->tq_threads, nthreads * sizeof(spl_task_t *));
+        kmem_free(tq->tq_threads, nthreads * sizeof(taskq_ent_t *));
         kmem_free(tq, sizeof(taskq_t));
 
 	SEXIT;

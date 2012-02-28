@@ -375,8 +375,8 @@ AC_DEFUN([SPL_AC_DEFAULT_PACKAGE], [
 		VENDOR=redhat ;
 	elif test -f /etc/fedora-release ; then
 		VENDOR=fedora ;
-	elif test -f /etc/arch-release ; then
-		VENDOR=arch ;
+	elif test -f /etc/gentoo-release ; then
+		VENDOR=gentoo ;
 	elif test -f /etc/lsb-release ; then
 		VENDOR=ubuntu ;
 	elif test -f /etc/debian_version ; then
@@ -385,8 +385,10 @@ AC_DEFUN([SPL_AC_DEFAULT_PACKAGE], [
 		VENDOR=sles ;
 	elif test -f /etc/slackware-version ; then
 		VENDOR=slackware ;
-	elif test -f /etc/gentoo-release ; then
-		VENDOR=gentoo ;
+	elif test -f /etc/arch-release ; then
+		VENDOR=arch ;
+	elif test -f /etc/lunar.release ; then
+		VENDOR=lunar ;
 	else
 		VENDOR= ;
 	fi
@@ -395,12 +397,14 @@ AC_DEFUN([SPL_AC_DEFAULT_PACKAGE], [
 
 	AC_MSG_CHECKING([default package type])
 	case "$VENDOR" in
-		fedora)     DEFAULT_PACKAGE=rpm ;;
 		redhat)     DEFAULT_PACKAGE=rpm ;;
-		sles)       DEFAULT_PACKAGE=rpm ;;
+		fedora)     DEFAULT_PACKAGE=rpm ;;
 		ubuntu)     DEFAULT_PACKAGE=deb ;;
 		debian)     DEFAULT_PACKAGE=deb ;;
+		sles)       DEFAULT_PACKAGE=rpm ;;
 		slackware)  DEFAULT_PACKAGE=tgz ;;
+		gentoo)     DEFAULT_PACKAGE=tgz ;;
+		lunar)      DEFAULT_PACKAGE=tgz ;;
 		arch)       DEFAULT_PACKAGE=arch;;
 		*)          DEFAULT_PACKAGE=rpm ;;
 	esac

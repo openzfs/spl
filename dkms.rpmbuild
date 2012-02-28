@@ -1,0 +1,16 @@
+#! /bin/bash
+while read VAR VAL;do
+  case ${VAR} in
+    Name:)
+      META_NAME=${VAL}
+      ;;
+    Version:)
+      META_VERSION=${VAL}
+      ;;
+    Release:)
+      META_RELEASE=${VAL}
+    ;;
+  esac
+done < META
+
+exec rpmbuild -bb dkms.template.spec --define "module_name ${META_NAME}-dkms" --define "version ${META_VERSION}.${META_RELEASE}" --define "module_srcdir $(pwd)" --define "license GPL" 

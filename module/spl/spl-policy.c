@@ -54,6 +54,11 @@ boolean_t secpolicy_zinject(cred_t* c) {
     return spl_capable(c,CAP_SYS_ADMIN);
 }
 EXPORT_SYMBOL(secpolicy_zinject);
+boolean_t secpolicy_vnode_setids_setgids(cred_t* c,gid_t gid) {
+    if(in_group_p(gid)) return 0;
+    return spl_capable(c,CAP_FSETID);
+}
+EXPORT_SYMBOL(secpolicy_vnode_setids_setgids);
 boolean_t secpolicy_vnode_setid_retain(cred_t* c,boolean_t is_setuid_root) {
     return spl_capable(c,CAP_FSETID);
 }

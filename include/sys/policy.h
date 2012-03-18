@@ -28,7 +28,8 @@
 #define _SPL_POLICY_H
 
 #define	secpolicy_fs_unmount(c,vfs)			(0)
-#define	secpolicy_vnode_setids_setgids(c,id)		(0)
+
+boolean_t secpolicy_vnode_setids_setgids(cred_t *c,gid_t gid);
 boolean_t secpolicy_sys_config(cred_t* c,boolean_t checkonly);
 boolean_t secpolicy_nfs(cred_t* c);
 boolean_t secpolicy_zfs(cred_t* c);

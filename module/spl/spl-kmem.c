@@ -1149,6 +1149,7 @@ spl_slab_reclaim(spl_kmem_cache_t *skc, int count, int flag)
 static void
 spl_magazine_age(void *data)
 {
+	preempt_disable();
 	spl_kmem_magazine_t *skm =
 		spl_get_work_data(data, spl_kmem_magazine_t, skm_work.work);
 	spl_kmem_cache_t *skc = skm->skm_cache;
@@ -1165,6 +1166,7 @@ spl_magazine_age(void *data)
 	if (!test_bit(KMC_BIT_DESTROY, &skc->skc_flags))
 		schedule_delayed_work_on(i, &skm->skm_work,
 					 skc->skc_delay / 3 * HZ);
+	preempt_enable();
 }
 
 /*

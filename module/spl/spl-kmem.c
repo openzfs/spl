@@ -1410,7 +1410,6 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 	skc->skc_obj_size = size;
 	skc->skc_obj_align = SPL_KMEM_CACHE_ALIGN;
 	skc->skc_delay = SPL_KMEM_CACHE_DELAY;
-	skc->skc_reap = SPL_KMEM_CACHE_REAP;
 	atomic_set(&skc->skc_ref, 0);
 
 	INIT_LIST_HEAD(&skc->skc_list);
@@ -1445,6 +1444,8 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 	rc = spl_slab_size(skc, &skc->skc_slab_objs, &skc->skc_slab_size);
 	if (rc)
 		SGOTO(out, rc);
+
+	skc->skc_reap = SPL_KMEM_CACHE_REAP >> highbit(skc->skc_slab_objs);
 
 	rc = spl_magazine_create(skc);
 	if (rc)
@@ -1865,15 +1866,23 @@ __spl_kmem_cache_generic_shrinker(struct shrinker *shrink,
     struct shrink_control *sc)
 {
 	spl_kmem_cache_t *skc;
+	uint32_t reap;
 	int unused = 0;
 
 	down_read(&spl_kmem_cache_sem);
 	list_for_each_entry(skc, &spl_kmem_cache_list, skc_list) {
-		if (sc->nr_to_scan)
+		if (sc->nr_to_scan) {
+			reap = sc->nr_to_scan >> fls64(skc->skc_slab_objs);
+
+			spin_lock(&skc->skc_lock);
+			skc->skc_reap = MAX(reap, 1);
+			spin_unlock(&skc->skc_lock);
+
 			spl_kmem_cache_reap_now(skc);
+		}
 
 		/*
-		 * Presume everything alloc'ed in reclaimable, this ensures
+		 * Presume everything alloc'ed is reclaimable, this ensures
 		 * we are called again with nr_to_scan > 0 so can try and
 		 * reclaim.  The exact number is not important either so
 		 * we forgo taking this already highly contented lock.
@@ -1914,7 +1923,8 @@ spl_kmem_cache_reap_now(spl_kmem_cache_t *skc)
 	if (skc->skc_reclaim)
 		skc->skc_reclaim(skc->skc_private);
 
-	spl_slab_reclaim(skc, skc->skc_reap, 0);
+	/* Reclaim from the cache, ignoring it's age and delay. */
+	spl_slab_reclaim(skc, skc->skc_reap, 1);
 	clear_bit(KMC_BIT_REAPING, &skc->skc_flags);
 	atomic_dec(&skc->skc_ref);
 

@@ -1445,9 +1445,6 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 	if (rc)
 		SGOTO(out, rc);
 
-	/* Shift by the highbit of skc_slab_objs as an estimate of
-	 * division by skc_slab_objs.
-	 */
 	skc->skc_reap = SPL_KMEM_CACHE_REAP >> highbit(skc->skc_slab_objs);
 
 	rc = spl_magazine_create(skc);
@@ -1875,9 +1872,6 @@ __spl_kmem_cache_generic_shrinker(struct shrinker *shrink,
 	list_for_each_entry(skc, &spl_kmem_cache_list, skc_list) {
 		if (sc->nr_to_scan) {
 			spin_lock(&skc->skc_lock);
-			/* Shift by the highbit of skc_slab_objs as an
-			 * estimate of division by skc_slab_objs.
-			 */
 			skc->skc_reap = sc->nr_to_scan >>
 			                    highbit(skc->skc_slab_objs);
 			spin_unlock(&skc->skc_lock);

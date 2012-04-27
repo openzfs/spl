@@ -1866,14 +1866,16 @@ __spl_kmem_cache_generic_shrinker(struct shrinker *shrink,
     struct shrink_control *sc)
 {
 	spl_kmem_cache_t *skc;
+	uint32_t reap;
 	int unused = 0;
 
 	down_read(&spl_kmem_cache_sem);
 	list_for_each_entry(skc, &spl_kmem_cache_list, skc_list) {
 		if (sc->nr_to_scan) {
+			reap = sc->nr_to_scan >> fls64(skc->skc_slab_objs);
+
 			spin_lock(&skc->skc_lock);
-			skc->skc_reap = sc->nr_to_scan >>
-			                    highbit(skc->skc_slab_objs);
+			skc->skc_reap = MAX(reap, 1);
 			spin_unlock(&skc->skc_lock);
 
 			spl_kmem_cache_reap_now(skc);

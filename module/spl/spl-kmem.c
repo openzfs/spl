@@ -1445,11 +1445,10 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 	if (rc)
 		SGOTO(out, rc);
 
-	/* Shift by the highbit of skc_slab_objs as an
-	 * estimate of division by skc_slab_objs.
+	/* Shift by the highbit of skc_slab_objs as an estimate of
+	 * division by skc_slab_objs.
 	 */
-	skc->skc_reap = SPL_KMEM_CACHE_REAP_NRSCAN >>
-	                                    highbit(skc->skc_slab_objs);
+	skc->skc_reap = SPL_KMEM_CACHE_REAP >> highbit(skc->skc_slab_objs);
 
 	rc = spl_magazine_create(skc);
 	if (rc)

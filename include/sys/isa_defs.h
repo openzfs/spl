@@ -74,7 +74,17 @@
 #define _LP64
 #endif
 
-#else /* Currently only x86_64, i386, and powerpc arches supported */
+#elif defined(__arm) || defined(__arm__) 
+ 
+#if defined(__ARMEL__) 
+#define _LITTLE_ENDIAN 
+#else 
+#define _BIG_ENDIAN 
+#endif 
+ 
+#define        _SUNOS_VTOC_16 
+
+#else /* Currently only x86_64, i386, ARM, and powerpc arches supported */
 #error "Unsupported ISA type"
 #endif
 

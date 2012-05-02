@@ -145,6 +145,7 @@ __div_u64(uint64_t u, uint32_t v)
 	return u;
 }
 
+
 /*
  * Implementation of 64-bit unsigned division for 32-bit machines.
  *
@@ -211,6 +212,19 @@ __umoddi3(uint64_t dividend, uint64_t divisor)
 	return (dividend - (divisor * __udivdi3(dividend, divisor)));
 }
 EXPORT_SYMBOL(__umoddi3);
+
+
+#if defined(__arm) || defined(__arm__)
+uint64_t __aeabi_uldivmod(uint64_t u, uint64_t v) {
+  return __udivdi3(u,v);
+}
+EXPORT_SYMBOL(__aeabi_uldivmod);
+int64_t __aeabi_ldivmod(int64_t u, int64_t v) {
+  return __divdi3(u,v);
+}
+EXPORT_SYMBOL(__aeabi_ldivmod);
+#endif /* arm */
+
 
 #endif /* BITS_PER_LONG */
 

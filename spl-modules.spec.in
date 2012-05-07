@@ -22,6 +22,14 @@
 %define kobj %{require_kobj}
 %endif
 
+%if %{defined require_kpkg}
+%define kpkg %{require_kpkg}
+%endif
+
+%if %{defined require_kdevpkg}
+%define kdevpkg %{require_kdevpkg}
+%endif
+
 # Set using 'rpmbuild ... --with debug ...', defaults to disabled.
 %if %{defined _with_debug}
  %define kdebug --enable-debug
@@ -90,8 +98,14 @@
   %define kverextra      %(echo %{kver} | cut -f3 -d'-')
  %endif
 
- %define kpkg            kernel-%{kverextra}
- %define kdevpkg         kernel-source
+ %if %{undefined kpkg}
+  %define kpkg           kernel-%{kverextra}
+ %endif
+
+ %if %{undefined kdevpkg}
+  %define kdevpkg        kernel-source
+ %endif
+
  %define kverpkg         %(echo %{kver} | %{__sed} -e 's/-%{kverextra}//g')
 
  # The kernel and rpm versions do not strictly match under SLES11
@@ -117,8 +131,15 @@
   %define kver           %((echo X; %{__cat} %{klnk}/kernel.release
                             2>/dev/null) | tail -1)
  %endif
- %define kpkg            chaos-kernel
- %define kdevpkg         chaos-kernel-devel
+
+ %if %{undefined kpkg}
+  %define kpkg           chaos-kernel
+ %endif
+
+ %if %{undefined kdevpkg}
+  %define kdevpkg        chaos-kernel-devel
+ %endif
+
  %define kverpkg         %{kver}
  %define koppkg          =
  %if %{undefined kdir}
@@ -136,8 +157,15 @@
   %define kver           %((echo X; %{__cat} %{klnk}/kernel.release
                             2>/dev/null) | tail -1)
  %endif
- %define kpkg            kernel
- %define kdevpkg         kernel-devel
+
+ %if %{undefined kpkg}
+  %define kpkg           kernel
+ %endif
+
+ %if %{undefined kdevpkg}
+  %define kdevpkg        kernel-devel
+ %endif
+
  %if %{defined el6} || %{defined ch5}
   %define kverpkg        %(echo %{kver} | %{__sed} -e 's/.%{_target_cpu}//g')
  %else
@@ -163,8 +191,15 @@
   %define kver           %((echo X; %{__cat} %{klnk}/kernel.release
                             2>/dev/null) | tail -1)
  %endif
- %define kpkg            kernel
- %define kdevpkg         kernel-devel
+
+ %if %{undefined kpkg}
+  %define kpkg           kernel
+ %endif
+
+ %if %{undefined kdevpkg}
+  %define kdevpkg        kernel-devel
+ %endif
+
  %define kverpkg         %(echo %{kver} | %{__sed} -e 's/.%{_target_cpu}//g')
  %define koppkg          =
  %if %{undefined kdir}

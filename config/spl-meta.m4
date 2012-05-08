@@ -95,6 +95,7 @@ AC_DEFUN([SPL_AC_META], [
 	fi
 
 	AC_MSG_RESULT([$_spl_ac_meta_got_file])
+	SPL_AC_META_RELEASE
 	]
 )
 
@@ -109,4 +110,32 @@ AC_DEFUN([_SPL_AC_META_GETVAL],
 		-e "\\$val=\\$_;"\
 		-e "END { print \\$val if defined \\$val; }"\
 		'$1' $META`]dnl
+)
+
+AC_DEFUN([SPL_AC_META_RELEASE], [
+	AC_MSG_CHECKING([git describe])
+
+	match="${SPL_META_NAME}-${SPL_META_VERSION}-${SPL_META_RELEASE}"
+	if git branch >/dev/null 2>&1; then
+		desc=$(git describe --tags --match $match)
+	else
+		desc=""
+	fi
+
+	if test "$desc" = ""; then
+		AC_MSG_RESULT([not a git tree])
+	elif test "$desc" = "$match"; then
+		AC_MSG_RESULT([matches meta file])
+	else
+		AC_MSG_RESULT([does not match meta file ($desc)])
+	fi
+
+	desc=$(echo $desc | sed "s/$match//g" | sed "s/-/_/g")
+
+	if test "$desc" != ""; then
+		SPL_META_RELEASE="$SPL_META_RELEASE$desc"
+	fi
+
+	AC_SUBST([SPL_META_RELEASE])
+	]
 )

@@ -194,10 +194,10 @@
 %if %{defined el5} || %{defined el6} || %{defined ch5}
  %if %{undefined kver}
   %define klnk           %{_usrsrc}/kernels/*/include/config
-  %define kver_kern      %((echo X; %{__cat} %{klnk}/kernel.release
-                            2>/dev/null | %{__grep} -v debug) | tail -1)
-  %define kver_dbug      %((echo X; %{__cat} %{klnk}/kernel.release
-                            2>/dev/null | %{__grep} debug) | tail -1)
+  %define kver_kern      %((echo X; ((%{__cat} %{klnk}/kernel.release
+                            2>/dev/null) | %{__grep} -v debug)) | tail -1)
+  %define kver_dbug      %((echo X; ((%{__cat} %{klnk}/kernel.release
+                            2>/dev/null) | %{__grep} debug)) | tail -1)
  %else
   %define kver_kern      %{kver}
   %define kver_dbug      %{kver}.debug

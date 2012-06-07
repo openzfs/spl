@@ -87,6 +87,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_2ARGS_ZLIB_DEFLATE_WORKSPACESIZE
 	SPL_AC_SHRINK_CONTROL_STRUCT
 	SPL_AC_RWSEM_SPINLOCK_IS_RAW
+	SPL_AC_PMD_ALLOC_WITH_MASK
 ])
 
 AC_DEFUN([SPL_AC_MODULE_SYMVERS], [
@@ -2055,4 +2056,30 @@ AC_DEFUN([SPL_AC_RWSEM_SPINLOCK_IS_RAW], [
 		AC_MSG_RESULT(no)
 	])
 	EXTRA_KCFLAGS="$tmp_flags"
+])
+
+dnl #
+dnl # Proposed VM Subsystem Bug Fix
+dnl # Make __pte_alloc_kernel() honor gfp flags passed to vmalloc()
+dnl # This is detected by checking a macro that is changed to support this.
+dnl #
+AC_DEFUN([SPL_AC_PMD_ALLOC_WITH_MASK],
+	[AC_MSG_CHECKING([whether pmd_alloc_with_mask exists])
+	SPL_LINUX_TRY_COMPILE([
+		#define CONFIG_MMU
+		#undef RCH_HAS_4LEVEL_HACK
+		#include <linux/mm.h>
+	],[
+		struct mm_struct init_mm;
+		pud_t pud;
+		unsigned long addr;
+		gfp_t gfp_mask;
+		pmd_alloc_with_mask(&init_mm, &pud, addr, gfp_mask);
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_PMD_ALLOC_WITH_MASK, 1,
+		          [pmd_alloc_with_mask exists])
+	],[
+		AC_MSG_RESULT(no)
+	])
 ])

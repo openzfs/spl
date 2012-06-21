@@ -441,7 +441,7 @@ AC_DEFUN([SPL_AC_CONFIG], [
         SPL_CONFIG=all
         AC_ARG_WITH([config],
                 AS_HELP_STRING([--with-config=CONFIG],
-                [Config file 'kernel|user|all|srpm']),
+                [Config file 'kernel|user|all|srpm|dkms']),
                 [SPL_CONFIG="$withval"])
 
         AC_MSG_CHECKING([spl config])
@@ -453,11 +453,12 @@ AC_DEFUN([SPL_AC_CONFIG], [
                 user)   SPL_AC_CONFIG_USER   ;;
                 all)    SPL_AC_CONFIG_KERNEL
                         SPL_AC_CONFIG_USER   ;;
-		srpm)                        ;;
+                srpm)                        ;;
+                dkms)                        ;;
                 *)
                 AC_MSG_RESULT([Error!])
                 AC_MSG_ERROR([Bad value "$SPL_CONFIG" for --with-config,
-                              user kernel|user|all|srpm]) ;;
+                              user kernel|user|all|srpm|dkms]) ;;
         esac
 
         AM_CONDITIONAL([CONFIG_USER],

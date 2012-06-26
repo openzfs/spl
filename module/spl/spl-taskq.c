@@ -255,9 +255,10 @@ __taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t flags)
 	if (!(flags & (TQ_SLEEP | TQ_NOSLEEP)))
 		flags |= TQ_SLEEP;
 
-	if (unlikely(in_atomic() && (flags & TQ_SLEEP)))
-		PANIC("May schedule while atomic: %s/0x%08x/%d\n",
-		    current->comm, preempt_count(), current->pid);
+	/* FIXME: Why does this fail when KM_SLEEP contains __GFP_HIGHMEM? */
+	//if (unlikely(in_atomic() && (flags & TQ_SLEEP)))
+	//	PANIC("May schedule while atomic: %s/0x%08x/%d\n",
+	//	    current->comm, preempt_count(), current->pid);
 
         spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
 

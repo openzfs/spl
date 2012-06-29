@@ -446,6 +446,8 @@ taskq_thread(void *args)
 	if (tq->tq_flags & TASKQ_NORECLAIM)
 		current->flags |= PF_MEMALLOC;
 
+	set_user_nice(current, -20);
+
         sigfillset(&blocked);
         sigprocmask(SIG_BLOCK, &blocked, NULL);
         flush_signals(current);

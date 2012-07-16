@@ -367,6 +367,7 @@ symbols needed for building additional modules which use %{name}.
 %package debug
 Summary:         Solaris Porting Layer Debug Modules
 Group:           Utilities/System
+Provides:        %{name}
 Release:         %{rel_dbug}
 %if %{defined req_dbug}
 Requires:        %{req_dbug}
@@ -384,6 +385,7 @@ rwlock, taskq, thread, time, and vnode APIs.
 %package debug-devel
 Summary:         Solaris Porting Layer Debug Headers and Symbols
 Group:           Development/Libraries
+Provides:        %{name}-devel
 Release:         %{rel_dbug}
 %if %{defined devreq_dbug}
 Requires:        %{devreq_dbug}

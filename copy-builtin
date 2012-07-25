@@ -55,7 +55,6 @@ adjust_obj_paths()
 for MODULE in "${MODULES[@]}"
 do
 	adjust_obj_paths "$KERNEL_DIR/spl/$MODULE/Makefile"
-	adjust_obj_paths "$KERNEL_DIR/spl/$MODULE/Makefile"
 done
 
 cat > "$KERNEL_DIR/spl/Kconfig" <<"EOF"

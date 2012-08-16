@@ -41,7 +41,7 @@
 /*
  * Memory allocation interfaces
  */
-#define KM_SLEEP	GFP_KERNEL	/* Can sleep, never fails */
+#define KM_SLEEP	(GFP_NOIO | __GFP_HIGH)	/* Can sleep, never fails */
 #define KM_NOSLEEP	GFP_ATOMIC	/* Can not sleep, may fail */
 #define KM_PUSHPAGE	(GFP_NOIO | __GFP_HIGH)	/* Use reserved memory */
 #define KM_NODEBUG	__GFP_NOWARN	/* Suppress warnings */

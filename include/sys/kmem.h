@@ -345,6 +345,8 @@ typedef int (*spl_kmem_ctor_t)(void *, void *, int);
 typedef void (*spl_kmem_dtor_t)(void *, void *);
 typedef void (*spl_kmem_reclaim_t)(void *);
 
+#ifdef SPL_OWN_SLAB
+
 typedef struct spl_kmem_magazine {
 	uint32_t		skm_magic;	/* Sanity magic */
 	uint32_t		skm_avail;	/* Available objects */
@@ -408,6 +410,25 @@ typedef struct spl_kmem_cache {
 	uint64_t		skc_obj_alloc;	/* Obj alloc current */
 	uint64_t		skc_obj_max;	/* Obj max historic */
 } spl_kmem_cache_t;
+
+#else
+
+typedef struct spl_kmem_cache {
+	struct kmem_cache	*skc_cache;	/* Linux SLAB cache */
+	uint32_t		skc_magic;	/* Sanity magic */
+	spl_kmem_ctor_t		skc_ctor;	/* Constructor */
+	spl_kmem_dtor_t		skc_dtor;	/* Destructor */
+	void			*skc_private;	/* Private data */
+	unsigned long		skc_flags;	/* Flags */
+	uint32_t		skc_obj_size;	/* Object size */
+	atomic_t		skc_ref;	/* Ref count callers */
+	struct list_head	skc_list;	/* List of caches linkage */
+	spinlock_t		skc_lock;	/* Cache lock */
+	volatile uint64_t	skc_obj_alloc;	/* Obj alloc current */
+
+} spl_kmem_cache_t;
+
+#endif /* SPL_OWN_SLAB */
 #define kmem_cache_t		spl_kmem_cache_t
 
 extern spl_kmem_cache_t *spl_kmem_cache_create(char *name, size_t size,
@@ -431,9 +452,15 @@ void spl_kmem_fini(void);
 #define kmem_cache_destroy(skc)		spl_kmem_cache_destroy(skc)
 #define kmem_cache_alloc(skc, flags)	spl_kmem_cache_alloc(skc, flags)
 #define kmem_cache_free(skc, obj)	spl_kmem_cache_free(skc, obj)
+#ifdef SPL_OWN_SLAB
 #define kmem_cache_reap_now(skc)	\
         spl_kmem_cache_reap_now(skc, skc->skc_reap)
 #define kmem_reap()			spl_kmem_reap()
+#else
+#define kmem_cache_reap_now(skc)	\
+        spl_kmem_cache_reap_now(skc, 0)
+#define kmem_reap()			spl_kmem_reap()
+#endif /* SPL_OWN_SLAB */
 #define kmem_virt(ptr)			(((ptr) >= (void *)VMALLOC_START) && \
 					 ((ptr) <  (void *)VMALLOC_END))
 

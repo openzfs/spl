@@ -49,7 +49,9 @@ static struct ctl_table_header *spl_header = NULL;
 static struct proc_dir_entry *proc_spl = NULL;
 #ifdef DEBUG_KMEM
 static struct proc_dir_entry *proc_spl_kmem = NULL;
+#ifdef SPL_OWN_SLAB
 static struct proc_dir_entry *proc_spl_kmem_slab = NULL;
+#endif /* SPL_OWN_SLAB */
 #endif /* DEBUG_KMEM */
 struct proc_dir_entry *proc_spl_kstat = NULL;
 
@@ -440,6 +442,7 @@ SPL_PROC_HANDLER(proc_domemused)
         SRETURN(rc);
 }
 
+#ifdef SPL_OWN_SLAB
 SPL_PROC_HANDLER(proc_doslab)
 {
         int rc = 0;
@@ -486,6 +489,7 @@ SPL_PROC_HANDLER(proc_doslab)
 
         SRETURN(rc);
 }
+#endif /* SPL_OWN_SLAB */
 #endif /* DEBUG_KMEM */
 
 SPL_PROC_HANDLER(proc_dohostid)
@@ -617,6 +621,7 @@ SPL_PROC_HANDLER(proc_dofreemem)
         SRETURN(rc);
 }
 
+#ifdef SPL_OWN_SLAB
 #ifdef DEBUG_KMEM
 static void
 slab_seq_show_headers(struct seq_file *f)
@@ -719,6 +724,7 @@ static struct file_operations proc_slab_operations = {
         .release        = seq_release,
 };
 #endif /* DEBUG_KMEM */
+#endif /* SPL_OWN_SLAB */
 
 #ifdef DEBUG_LOG
 static struct ctl_table spl_debug_table[] = {
@@ -956,6 +962,7 @@ static struct ctl_table spl_kmem_table[] = {
                 .mode     = 0444,
                 .proc_handler = &proc_doulongvec_minmax,
         },
+#ifdef SPL_OWN_SLAB
         {
                 CTL_NAME    (CTL_KMEM_SLAB_KMEMTOTAL)
                 .procname = "slab_kmem_total",
@@ -1016,6 +1023,7 @@ static struct ctl_table spl_kmem_table[] = {
                 .mode     = 0444,
                 .proc_handler = &proc_doslab,
         },
+#endif /* SPL_OWN_SLAB */
 	{0},
 };
 #endif /* DEBUG_KMEM */
@@ -1162,6 +1170,7 @@ spl_proc_init(void)
 	if (proc_spl == NULL)
 		SGOTO(out, rc = -EUNATCH);
 
+#ifdef SPL_OWN_SLAB
 #ifdef DEBUG_KMEM
         proc_spl_kmem = proc_mkdir("kmem", proc_spl);
         if (proc_spl_kmem == NULL)
@@ -1173,6 +1182,7 @@ spl_proc_init(void)
 
         proc_spl_kmem_slab->proc_fops = &proc_slab_operations;
 #endif /* DEBUG_KMEM */
+#endif /* SPL_OWN_SLAB */
 
         proc_spl_kstat = proc_mkdir("kstat", proc_spl);
         if (proc_spl_kstat == NULL)

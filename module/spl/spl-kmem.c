@@ -33,6 +33,21 @@
 
 #define SS_DEBUG_SUBSYS SS_KMEM
 
+/* 
+ * Prevent spl-kmem.h from preventing access to Linux SLAB allocator 
+ */
+
+#undef kmem_cache_create
+#undef kmem_cache_destroy
+#undef kmem_cache_alloc
+#undef kmem_cache_free
+
+/* 
+ * Linux SLAB cache for spl_kmem_cache_t objects
+ */
+
+struct kmem_cache *spl_slab_cache;
+
 /*
  * The minimum amount of memory measured in pages to be free at all
  * times on the system.  This is similar to Linux's zone->pages_min
@@ -826,6 +841,8 @@ EXPORT_SYMBOL(vmem_free_debug);
 struct list_head spl_kmem_cache_list;   /* List of caches */
 struct rw_semaphore spl_kmem_cache_sem; /* Cache list lock */
 
+#ifdef SPL_OWN_SLAB
+
 static int spl_cache_flush(spl_kmem_cache_t *skc,
                            spl_kmem_magazine_t *skm, int flush);
 
@@ -1396,13 +1413,9 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 	if (current_thread_info()->preempt_count || irqs_disabled())
 		kmem_flags = KM_NOSLEEP;
 
-	/* Allocate memory for a new cache an initialize it.  Unfortunately,
-	 * this usually ends up being a large allocation of ~32k because
-	 * we need to allocate enough memory for the worst case number of
-	 * cpus in the magazine, skc_mag[NR_CPUS].  Because of this we
-	 * explicitly pass KM_NODEBUG to suppress the kmem warning */
-	skc = (spl_kmem_cache_t *)kmem_zalloc(sizeof(*skc),
-	                                      kmem_flags | KM_NODEBUG);
+	/* Allocate memory for a new cache an initialize it. */
+	skc = (spl_kmem_cache_t *)kmem_cache_alloc(spl_slab_cache, kmem_flags);
+
 	if (skc == NULL)
 		SRETURN(NULL);
 
@@ -1535,7 +1548,7 @@ spl_kmem_cache_destroy(spl_kmem_cache_t *skc)
 	kmem_free(skc->skc_name, skc->skc_name_size);
 	spin_unlock(&skc->skc_lock);
 
-	kmem_free(skc, sizeof(*skc));
+	kmem_cache_free(spl_slab_cache, skc);
 
 	SEXIT;
 }
@@ -1984,6 +1997,215 @@ spl_kmem_reap(void)
 }
 EXPORT_SYMBOL(spl_kmem_reap);
 
+#else /* SPL_OWN_SLAB */
+
+/*
+ * Create a object cache based on the following arguments:
+ * name		cache name
+ * size		cache object size
+ * align	cache object alignment
+ * ctor		cache object constructor
+ * dtor		cache object destructor
+ * reclaim	cache object reclaim (unused)
+ * priv		cache private data for ctor/dtor/reclaim
+ * vmp		unused must be NULL
+ * flags
+ *	KMC_NOTOUCH	Disable cache object aging (unsupported)
+ *	KMC_NODEBUG	Disable debugging (unsupported)
+ *	KMC_NOMAGAZINE	Disable magazine (unsupported)
+ *	KMC_NOHASH      Disable hashing (unsupported)
+ *	KMC_QCACHE	Disable qcache (unsupported)
+ *	KMC_KMEM	Force kmem backed cache
+ *	KMC_VMEM        Force vmem backed cache (unsupported)
+ *	KMC_OFFSLAB	Locate objects off the slab
+ */
+spl_kmem_cache_t *
+spl_kmem_cache_create(char *name, size_t size, size_t align,
+                      spl_kmem_ctor_t ctor,
+                      spl_kmem_dtor_t dtor,
+                      spl_kmem_reclaim_t reclaim,
+                      void *priv, void *vmp, int flags)
+{
+        spl_kmem_cache_t *skc;
+	int kmem_flags = KM_SLEEP;
+	SENTRY;
+
+        /* We may be called when there is a non-zero preempt_count or
+         * interrupts are disabled is which case we must not sleep.
+	 */
+	if (current_thread_info()->preempt_count || irqs_disabled())
+		kmem_flags = KM_NOSLEEP;
+
+	/* Allocate memory for a new cache wrapper and initialize it. */
+	skc = (spl_kmem_cache_t *)kmem_cache_alloc(spl_slab_cache, kmem_flags);
+
+	if (align) {
+		VERIFY(ISP2(align));
+		VERIFY3U(align, >=, SPL_KMEM_CACHE_ALIGN); /* Min alignment */
+		VERIFY3U(align, <=, PAGE_SIZE);            /* Max alignment */
+	}
+	else
+	{
+		align = SPL_KMEM_CACHE_ALIGN;
+	}
+
+	skc->skc_cache = kmem_cache_create(name,
+		size,
+		align,
+		0,
+		NULL);
+	if (!skc->skc_cache) {
+		SRETURN(NULL);
+	}
+
+	skc->skc_magic = SKC_MAGIC;
+	skc->skc_ctor = ctor;
+	skc->skc_dtor = dtor;
+	skc->skc_private = priv;
+	skc->skc_flags = flags;
+	skc->skc_obj_size = size;
+	atomic_set(&skc->skc_ref, 0);
+
+	INIT_LIST_HEAD(&skc->skc_list);
+	spin_lock_init(&skc->skc_lock);
+
+	down_write(&spl_kmem_cache_sem);
+	list_add_tail(&skc->skc_list, &spl_kmem_cache_list);
+	up_write(&spl_kmem_cache_sem);
+
+	SRETURN(skc);
+
+}
+EXPORT_SYMBOL(spl_kmem_cache_create);
+
+/*
+ * Register a move callback to for cache defragmentation.
+ * XXX: Linux has no such function, but we can use a stub to make ZFS happy.
+ */
+void
+spl_kmem_cache_set_move(spl_kmem_cache_t *skc,
+    kmem_cbrc_t (move)(void *, void *, size_t, void *))
+{
+        ASSERT(move != NULL);
+}
+EXPORT_SYMBOL(spl_kmem_cache_set_move);
+
+/*
+ * Destroy a cache and all objects associated with the cache.
+ */
+void
+spl_kmem_cache_destroy(spl_kmem_cache_t *skc)
+{
+	DECLARE_WAIT_QUEUE_HEAD(wq);
+	SENTRY;
+
+	ASSERT(skc->skc_magic == SKC_MAGIC);
+
+	down_write(&spl_kmem_cache_sem);
+	list_del_init(&skc->skc_list);
+	up_write(&spl_kmem_cache_sem);
+
+	/* Wait until all current callers complete, this is mainly
+	 * to catch the case where a low memory situation triggers a
+	 * cache reaping action which races with this destroy. */
+	wait_event(wq, atomic_read(&skc->skc_ref) == 0);
+
+	spin_lock(&skc->skc_lock);
+
+	/* Validate there are no objects in use and free all the
+	 * spl_kmem_slab_t, spl_kmem_obj_t, and object buffers. */
+	ASSERT3U(skc->skc_obj_alloc, ==, 0);
+
+	kmem_cache_destroy(skc->skc_cache);
+
+	spin_unlock(&skc->skc_lock);
+
+	kmem_cache_free(spl_slab_cache, skc);
+
+	SEXIT;
+}
+EXPORT_SYMBOL(spl_kmem_cache_destroy);
+
+void *
+spl_kmem_cache_alloc(spl_kmem_cache_t *skc, int flags)
+{
+	void *obj = NULL;
+	SENTRY;
+
+	ASSERT(skc->skc_magic == SKC_MAGIC);
+	ASSERT(!test_bit(KMC_BIT_DESTROY, &skc->skc_flags));
+	ASSERT(flags & KM_SLEEP);
+	atomic_inc(&skc->skc_ref);
+
+	obj = kmem_cache_alloc(skc->skc_cache, flags);
+
+	if (NULL != obj)
+	{
+		if (skc->skc_ctor)
+			skc->skc_ctor(obj, skc->skc_private, flags);
+
+		spin_lock(&skc->skc_lock);
+		skc->skc_obj_alloc++;
+		spin_unlock(&skc->skc_lock);
+
+	}
+
+	atomic_dec(&skc->skc_ref);
+	SRETURN(obj);
+}
+EXPORT_SYMBOL(spl_kmem_cache_alloc);
+
+/*
+ * Free an object back to the local per-cpu magazine, there is no
+ * guarantee that this is the same magazine the object was originally
+ * allocated from.  We may need to flush entire from the magazine
+ * back to the slabs to make space.
+ */
+void
+spl_kmem_cache_free(spl_kmem_cache_t *skc, void *obj)
+{
+	SENTRY;
+
+	ASSERT(skc->skc_magic == SKC_MAGIC);
+	ASSERT(!test_bit(KMC_BIT_DESTROY, &skc->skc_flags));
+	atomic_inc(&skc->skc_ref);
+
+	if (skc->skc_dtor)
+		skc->skc_dtor(obj, skc->skc_private);
+
+	kmem_cache_free(skc->skc_cache, obj);
+
+	atomic_dec(&skc->skc_ref);
+	SEXIT;
+}
+EXPORT_SYMBOL(spl_kmem_cache_free);
+
+/*
+ * Dummy function to enable us to use the Linux SLAB, which lacks an analogous
+ * function.
+ */
+void
+spl_kmem_cache_reap_now(spl_kmem_cache_t *skc, int count)
+{
+	SENTRY;
+	ASSERT(skc->skc_magic == SKC_MAGIC);
+	SEXIT;
+}
+EXPORT_SYMBOL(spl_kmem_cache_reap_now);
+
+/*
+ * Dummy function to enable us to use the Linux SLAB, which lacks an analogous
+ * function.
+ */
+void
+spl_kmem_reap(void)
+{
+	return;
+}
+EXPORT_SYMBOL(spl_kmem_reap);
+
+#endif /* SPL_OWN_SLAB */
+
 #if defined(DEBUG_KMEM) && defined(DEBUG_KMEM_TRACKING)
 static char *
 spl_sprintf_addr(kmem_debug_t *kd, char *str, int len, int min)
@@ -2193,7 +2415,15 @@ spl_kmem_init(void)
 	init_rwsem(&spl_kmem_cache_sem);
 	INIT_LIST_HEAD(&spl_kmem_cache_list);
 
+	spl_slab_cache = kmem_cache_create("spl_slab_cache",
+		sizeof(spl_kmem_cache_t),
+		0,
+		SLAB_HWCACHE_ALIGN,
+		NULL);
+
+#ifdef SPL_OWN_SLAB
 	spl_register_shrinker(&spl_kmem_cache_shrinker);
+#endif /* SPL_OWN_SLAB */
 
 #ifdef DEBUG_KMEM
 	kmem_alloc_used_set(0);
@@ -2229,7 +2459,11 @@ spl_kmem_fini(void)
 #endif /* DEBUG_KMEM */
 	SENTRY;
 
+#ifdef SPL_OWN_SLAB
 	spl_unregister_shrinker(&spl_kmem_cache_shrinker);
+#endif /* SPL_OWN_SLAB */
+
+	kmem_cache_destroy(spl_slab_cache);
 
 	SEXIT;
 }

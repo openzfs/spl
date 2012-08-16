@@ -29,6 +29,7 @@
 #define SPLAT_KMEM_NAME			"kmem"
 #define SPLAT_KMEM_DESC			"Kernel Malloc/Slab Tests"
 
+#ifdef SPL_OWN_SLAB
 #define SPLAT_KMEM_TEST1_ID		0x0101
 #define SPLAT_KMEM_TEST1_NAME		"kmem_alloc"
 #define SPLAT_KMEM_TEST1_DESC		"Memory allocation test (kmem_alloc)"
@@ -1237,6 +1238,7 @@ splat_kmem_test13(struct file *file, void *arg)
 
 	return rc;
 }
+#endif /* SPL_OWN_SLAB */
 
 splat_subsystem_t *
 splat_kmem_init(void)
@@ -1255,6 +1257,7 @@ splat_kmem_init(void)
 	spin_lock_init(&sub->test_lock);
 	sub->desc.id = SPLAT_SUBSYSTEM_KMEM;
 
+#ifdef SPL_OWN_SLAB
 	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST1_NAME, SPLAT_KMEM_TEST1_DESC,
 			SPLAT_KMEM_TEST1_ID, splat_kmem_test1);
 	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST2_NAME, SPLAT_KMEM_TEST2_DESC,
@@ -1283,6 +1286,7 @@ splat_kmem_init(void)
 			SPLAT_KMEM_TEST12_ID, splat_kmem_test12);
 	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST13_NAME, SPLAT_KMEM_TEST13_DESC,
 			SPLAT_KMEM_TEST13_ID, splat_kmem_test13);
+#endif /* SPL_OWN_SLAB */
 
 	return sub;
 }
@@ -1291,6 +1295,7 @@ void
 splat_kmem_fini(splat_subsystem_t *sub)
 {
 	ASSERT(sub);
+#ifdef SPL_OWN_SLAB
 	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST13_ID);
 	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST12_ID);
 #ifdef _LP64
@@ -1306,6 +1311,7 @@ splat_kmem_fini(splat_subsystem_t *sub)
 	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST3_ID);
 	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST2_ID);
 	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST1_ID);
+#endif /* SPL_OWN_SLAB */
 
 	kfree(sub);
 }

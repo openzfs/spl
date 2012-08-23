@@ -1156,7 +1156,11 @@ spl_magazine_age(void *data)
 	spl_kmem_magazine_t *skm =
 		spl_get_work_data(data, spl_kmem_magazine_t, skm_work.work);
 	spl_kmem_cache_t *skc = skm->skm_cache;
-	int i = smp_processor_id();
+	int i;
+
+	preempt_disable();
+
+	i = smp_processor_id();
 
 	ASSERT(skm->skm_magic == SKM_MAGIC);
 	ASSERT(skc->skc_magic == SKC_MAGIC);
@@ -1169,6 +1173,7 @@ spl_magazine_age(void *data)
 	if (!test_bit(KMC_BIT_DESTROY, &skc->skc_flags))
 		schedule_delayed_work_on(i, &skm->skm_work,
 					 skc->skc_delay / 3 * HZ);
+	preempt_enable();
 }
 
 /*

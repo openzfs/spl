@@ -485,6 +485,7 @@ splat_kmem_cache_test_thread(void *arg)
 {
 	kmem_cache_priv_t *kcp = (kmem_cache_priv_t *)arg;
 	kmem_cache_thread_t *kct;
+	kmem_cache_data_t *kcd;
 	int rc = 0, id, i;
 	void *obj;
 
@@ -531,11 +532,13 @@ splat_kmem_cache_test_thread(void *arg)
 
 	for (i = 0; i < kct->kct_kcd_count; i++) {
 		spin_lock(&kct->kct_lock);
-		if (kct->kct_kcd[i]) {
-			kmem_cache_free(kcp->kcp_cache, kct->kct_kcd[i]);
+		kcd = kct->kct_kcd[i];
+		if (kcd)
 			kct->kct_kcd[i] = NULL;
-		}
 		spin_unlock(&kct->kct_lock);
+
+		if (kcd)
+			kmem_cache_free(kcp->kcp_cache, kcd);
 	}
 out:
 	spin_lock(&kcp->kcp_lock);
@@ -1013,7 +1016,7 @@ splat_kmem_test11(struct file *file, void *arg)
 {
 	uint64_t size, alloc, rc;
 
-	size = 256*1024;
+	size = 8 * 1024;
 	alloc = ((4 * physmem * PAGE_SIZE) / size) / SPLAT_KMEM_THREADS;
 
 	splat_vprint(file, SPLAT_KMEM_TEST11_NAME, "%-22s  %s", "name",

@@ -72,6 +72,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_4ARGS_VFS_RENAME
 	SPL_AC_VFS_FSYNC
 	SPL_AC_2ARGS_VFS_FSYNC
+	SPL_AC_FALLOC_FL_PUNCH_HOLE
 	SPL_AC_FS_STRUCT_SPINLOCK
 	SPL_AC_CRED_STRUCT
 	SPL_AC_GROUPS_SEARCH
@@ -1989,6 +1990,28 @@ AC_DEFUN([SPL_AC_2ARGS_VFS_FSYNC], [
 		AC_DEFINE(HAVE_2ARGS_VFS_FSYNC, 1, [vfs_fsync() wants 2 args])
 	],[
 		AC_MSG_RESULT(no)
+	])
+])
+
+dnl #
+dnl # 2.6.38 API change,
+dnl # check if file hole punching is available
+dnl #
+AC_DEFUN([SPL_AC_FALLOC_FL_PUNCH_HOLE],
+	[AC_MSG_CHECKING([whether kernel defines FALLOC_FL_PUNCH_HOLE])
+	SPL_LINUX_TRY_COMPILE([
+		#include <linux/fs.h>
+		#include <linux/falloc.h>
+	],[
+		#ifndef FALLOC_FL_PUNCH_HOLE
+		#error FALLOC_FL_PUNCH_HOLE is undefined
+		#endif
+	],[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE(HAVE_FALLOC_FL_PUNCH_HOLE, 1,
+		          [kernel defines FALLOC_FL_PUNCH_HOLE])
+	],[
+		AC_MSG_RESULT([no])
 	])
 ])
 

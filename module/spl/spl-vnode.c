@@ -25,6 +25,7 @@
 \*****************************************************************************/
 
 #include <sys/vnode.h>
+#include <linux/falloc.h>
 #include <spl-debug.h>
 
 #ifdef SS_DEBUG_SUBSYS
@@ -509,6 +510,39 @@ int vn_fsync(vnode_t *vp, int flags, void *x3, void *x4)
 	SRETURN(-spl_filp_fsync(vp->v_file, datasync));
 } /* vn_fsync() */
 EXPORT_SYMBOL(vn_fsync);
+
+int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
+    offset_t offset, void *x6, void *x7)
+{
+	SENTRY;
+
+	if (cmd != F_FREESP || bfp->l_whence != 0)
+		SRETURN(-EOPNOTSUPP);
+
+	ASSERT(vp);
+	ASSERT(vp->v_file);
+	ASSERT(bfp->l_start >= 0 && bfp->l_len > 0);
+
+#ifndef HAVE_FALLOC_FL_PUNCH_HOLE
+
+	SRETURN(-EOPNOTSUPP);
+
+#else
+
+	if (!vp->v_file->f_op->fallocate)
+		SRETURN(-EOPNOTSUPP);
+
+	/*
+	 * TODO: on some older kernel versions the interface is a
+	 * "truncate_range" inode operation.
+	 */
+	SRETURN(-vp->v_file->f_op->fallocate(vp->v_file,
+	    FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
+	    bfp->l_start, bfp->l_len));
+
+#endif
+}
+EXPORT_SYMBOL(vn_space);
 
 /* Function must be called while holding the vn_file_lock */
 static file_t *

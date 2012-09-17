@@ -517,7 +517,7 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	SENTRY;
 
 	if (cmd != F_FREESP || bfp->l_whence != 0)
-		SRETURN(-EOPNOTSUPP);
+		SRETURN(EOPNOTSUPP);
 
 	ASSERT(vp);
 	ASSERT(vp->v_file);
@@ -525,12 +525,12 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 
 #ifndef HAVE_FALLOC_FL_PUNCH_HOLE
 
-	SRETURN(-EOPNOTSUPP);
+	SRETURN(EOPNOTSUPP);
 
 #else
 
 	if (!vp->v_file->f_op->fallocate)
-		SRETURN(-EOPNOTSUPP);
+		SRETURN(EOPNOTSUPP);
 
 	/*
 	 * TODO: on some older kernel versions the interface is a

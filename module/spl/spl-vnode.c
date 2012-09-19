@@ -523,7 +523,7 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	ASSERT(vp->v_file);
 	ASSERT(bfp->l_start >= 0 && bfp->l_len > 0);
 
-#ifndef HAVE_FALLOC_FL_PUNCH_HOLE
+#ifndef FALLOC_FL_PUNCH_HOLE
 
 	SRETURN(EOPNOTSUPP);
 

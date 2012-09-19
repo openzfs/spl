@@ -33,6 +33,21 @@
 
 #define SS_DEBUG_SUBSYS SS_KMEM
 
+/* 
+ * Prevent spl-kmem.h from preventing access to Linux SLAB allocator 
+ */
+
+#undef kmem_cache_create
+#undef kmem_cache_destroy
+#undef kmem_cache_alloc
+#undef kmem_cache_free
+
+/* 
+ * Linux SLAB cache for spl_kmem_cache_t objects
+ */
+
+struct kmem_cache *spl_slab_cache;
+
 /*
  * The minimum amount of memory measured in pages to be free at all
  * times on the system.  This is similar to Linux's zone->pages_min
@@ -1449,13 +1464,9 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 	if (current_thread_info()->preempt_count || irqs_disabled())
 		kmem_flags = KM_NOSLEEP;
 
-	/* Allocate memory for a new cache an initialize it.  Unfortunately,
-	 * this usually ends up being a large allocation of ~32k because
-	 * we need to allocate enough memory for the worst case number of
-	 * cpus in the magazine, skc_mag[NR_CPUS].  Because of this we
-	 * explicitly pass KM_NODEBUG to suppress the kmem warning */
-	skc = (spl_kmem_cache_t *)kmem_zalloc(sizeof(*skc),
-	                                      kmem_flags | KM_NODEBUG);
+	/* Allocate memory for a new cache an initialize it. */
+	skc = (spl_kmem_cache_t *)kmem_cache_alloc(spl_slab_cache, kmem_flags);
+
 	if (skc == NULL)
 		SRETURN(NULL);
 
@@ -1594,7 +1605,7 @@ spl_kmem_cache_destroy(spl_kmem_cache_t *skc)
 	kmem_free(skc->skc_name, skc->skc_name_size);
 	spin_unlock(&skc->skc_lock);
 
-	kmem_free(skc, sizeof(*skc));
+	kmem_cache_free(spl_slab_cache, skc);
 
 	SEXIT;
 }
@@ -2324,6 +2335,12 @@ spl_kmem_init(void)
 	init_rwsem(&spl_kmem_cache_sem);
 	INIT_LIST_HEAD(&spl_kmem_cache_list);
 
+	spl_slab_cache = kmem_cache_create("spl_slab_cache",
+		sizeof(spl_kmem_cache_t),
+		0,
+		SLAB_HWCACHE_ALIGN,
+		NULL);
+
 	spl_register_shrinker(&spl_kmem_cache_shrinker);
 
 #ifdef DEBUG_KMEM
@@ -2361,6 +2378,8 @@ spl_kmem_fini(void)
 	SENTRY;
 
 	spl_unregister_shrinker(&spl_kmem_cache_shrinker);
+
+	kmem_cache_destroy(spl_slab_cache);
 
 	SEXIT;
 }

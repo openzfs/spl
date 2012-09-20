@@ -538,9 +538,22 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	if (vp->v_file->f_dentry && vp->v_file->f_dentry->d_inode &&
 	    vp->v_file->f_dentry->d_inode->i_op &&
 	    vp->v_file->f_dentry->d_inode->i_op->truncate_range) {
+		off_t end = bfp->l_start + bfp->l_len;
+		/*
+		 * Judging from the code in shmem_truncate_range(),
+		 * it seems the kernel expects the end offset to be
+		 * inclusive and aligned to the end of a page.
+		 */
+		if (end % PAGE_SIZE != 0) {
+			end &= ~(off_t)(PAGE_SIZE - 1);
+			if (end <= bfp->l_start)
+				SRETURN(0);
+		}
+		--end;
+			
 		vp->v_file->f_dentry->d_inode->i_op->truncate_range(
 			vp->v_file->f_dentry->d_inode,
-			bfp->l_start, bfp->l_start + bfp->l_len
+			bfp->l_start, end
 		);
 		SRETURN(0);
 	}

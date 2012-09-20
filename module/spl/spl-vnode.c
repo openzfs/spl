@@ -514,6 +514,7 @@ EXPORT_SYMBOL(vn_fsync);
 int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
     offset_t offset, void *x6, void *x7)
 {
+	int error = EOPNOTSUPP;
 	SENTRY;
 
 	if (cmd != F_FREESP || bfp->l_whence != 0)
@@ -523,24 +524,29 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	ASSERT(vp->v_file);
 	ASSERT(bfp->l_start >= 0 && bfp->l_len > 0);
 
-#ifndef FALLOC_FL_PUNCH_HOLE
-
-	SRETURN(EOPNOTSUPP);
-
-#else
-
-	if (!vp->v_file->f_op->fallocate)
-		SRETURN(EOPNOTSUPP);
-
-	/*
-	 * TODO: on some older kernel versions the interface is a
-	 * "truncate_range" inode operation.
-	 */
-	SRETURN(-vp->v_file->f_op->fallocate(vp->v_file,
-	    FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
-	    bfp->l_start, bfp->l_len));
-
+#ifdef FALLOC_FL_PUNCH_HOLE
+	if (vp->v_file->f_op->fallocate) {
+		error = -vp->v_file->f_op->fallocate(vp->v_file,
+		    FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
+		    bfp->l_start, bfp->l_len);
+		if (!error)
+			SRETURN(0);
+	}
 #endif
+
+#ifdef HAVE_INODE_TRUNCATE_RANGE
+	if (vp->v_file->f_dentry && vp->v_file->f_dentry->d_inode &&
+	    vp->v_file->f_dentry->d_inode->i_op &&
+	    vp->v_file->f_dentry->d_inode->i_op->truncate_range) {
+		vp->v_file->f_dentry->d_inode->i_op->truncate_range(
+			vp->v_file->f_dentry->d_inode,
+			bfp->l_start, bfp->l_start + bfp->l_len
+		);
+		SRETURN(0);
+	}
+#endif
+	
+	SRETURN(error);
 }
 EXPORT_SYMBOL(vn_space);
 

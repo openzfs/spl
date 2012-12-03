@@ -86,6 +86,12 @@ splat_linux_test2(struct file *file, void *arg)
 	return 0;
 }
 
+/* 
+ * Wait queue used to eliminate race between dropping of slab 
+ * and execution of the shrinker callback 
+ */
+DECLARE_WAIT_QUEUE_HEAD(shrinker_wait); 
+
 SPL_SHRINKER_CALLBACK_FWD_DECLARE(splat_linux_shrinker_fn);
 SPL_SHRINKER_DECLARE(splat_linux_shrinker, splat_linux_shrinker_fn, 1);
 static unsigned long splat_linux_shrinker_size = 0;
@@ -116,6 +122,8 @@ __splat_linux_shrinker_fn(struct shrinker *shrink, struct shrink_control *sc)
 		return -1;
 	}
 
+        /* Shrinker has run, so signal back to test. */
+        wake_up(&shrinker_wait);
 	return (int)splat_linux_shrinker_size;
 }
 
@@ -182,6 +190,16 @@ splat_linux_test3(struct file *file, void *arg)
 	rc = splat_linux_drop_slab(file);
 	if (rc)
 		goto out;
+
+        /* 
+         * By the time we get here, it is possible that the shrinker has not 
+         * yet run. splat_linux_drop_slab sends a signal for it to run, but  
+         * there is no guarantee of when it will actually run. We wait for it
+         * to run here, terminating when either the shrinker size is now 0 or
+         * we timeout after 1 second, which should be an eternity (error). 
+         * This is a fix for Issue #96 and Issue #182 
+         */
+        wait_event_timeout(shrinker_wait, (splat_linux_shrinker_size == 0), (HZ*1));
 
 	if (splat_linux_shrinker_size != 0) {
 		splat_vprint(file, SPLAT_LINUX_TEST3_NAME,

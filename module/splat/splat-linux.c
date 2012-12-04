@@ -101,6 +101,17 @@ static int
 __splat_linux_shrinker_fn(struct shrinker *shrink, struct shrink_control *sc)
 {
 	static int failsafe = 0;
+        static unsigned long last_splat_linux_shrinker_size = 0;
+
+        /*
+         * shrinker_size can only decrease or stay the same between callbacks
+         * in the same run, so Reset failsafe whenever shrinker increases
+         * as this indicates a new run.
+         */
+        if (last_splat_linux_shrinker_size < splat_linux_shrinker_size) {
+		failsafe = 0;
+        }
+        last_splat_linux_shrinker_size = splat_linux_shrinker_size;
 
 	if (sc->nr_to_scan) {
 		splat_linux_shrinker_size = splat_linux_shrinker_size -
@@ -115,12 +126,19 @@ __splat_linux_shrinker_fn(struct shrinker *shrink, struct shrink_control *sc)
 	}
 
 	/* Far more calls than expected abort drop_slab as a failsafe */
-	if ((++failsafe % 1000) == 0) {
+	if (failsafe > 100) {
 		splat_vprint(splat_linux_shrinker_file, SPLAT_LINUX_TEST3_NAME,
 		    "Far more calls than expected (%d), size now %lu\n",
 		   failsafe, splat_linux_shrinker_size);
 		return -1;
-	}
+	} else {
+               /*
+                * We only increment failsafe if it doesn't trigger.
+                * This makes any failsafe failure persistent
+                * until the next test.
+                */
+		failsafe++;
+        }
 
         /* Shrinker has run, so signal back to test. */
         wake_up(&shrinker_wait);

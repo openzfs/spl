@@ -86,6 +86,12 @@ splat_linux_test2(struct file *file, void *arg)
 	return 0;
 }
 
+/* 
+ * Wait queue used to eliminate race between dropping of slab 
+ * and execution of the shrinker callback 
+ */
+DECLARE_WAIT_QUEUE_HEAD(shrinker_wait); 
+
 SPL_SHRINKER_CALLBACK_FWD_DECLARE(splat_linux_shrinker_fn);
 SPL_SHRINKER_DECLARE(splat_linux_shrinker, splat_linux_shrinker_fn, 1);
 static unsigned long splat_linux_shrinker_size = 0;
@@ -95,6 +101,17 @@ static int
 __splat_linux_shrinker_fn(struct shrinker *shrink, struct shrink_control *sc)
 {
 	static int failsafe = 0;
+        static unsigned long last_splat_linux_shrinker_size = 0;
+
+        /*
+         * shrinker_size can only decrease or stay the same between callbacks
+         * in the same run, so Reset failsafe whenever shrinker increases
+         * as this indicates a new run.
+         */
+        if (last_splat_linux_shrinker_size < splat_linux_shrinker_size) {
+		failsafe = 0;
+        }
+        last_splat_linux_shrinker_size = splat_linux_shrinker_size;
 
 	if (sc->nr_to_scan) {
 		splat_linux_shrinker_size = splat_linux_shrinker_size -
@@ -109,13 +126,22 @@ __splat_linux_shrinker_fn(struct shrinker *shrink, struct shrink_control *sc)
 	}
 
 	/* Far more calls than expected abort drop_slab as a failsafe */
-	if ((++failsafe % 1000) == 0) {
+	if (failsafe > 100) {
 		splat_vprint(splat_linux_shrinker_file, SPLAT_LINUX_TEST3_NAME,
 		    "Far more calls than expected (%d), size now %lu\n",
 		   failsafe, splat_linux_shrinker_size);
 		return -1;
-	}
+	} else {
+               /*
+                * We only increment failsafe if it doesn't trigger.
+                * This makes any failsafe failure persistent
+                * until the next test.
+                */
+		failsafe++;
+        }
 
+        /* Shrinker has run, so signal back to test. */
+        wake_up(&shrinker_wait);
 	return (int)splat_linux_shrinker_size;
 }
 
@@ -182,6 +208,16 @@ splat_linux_test3(struct file *file, void *arg)
 	rc = splat_linux_drop_slab(file);
 	if (rc)
 		goto out;
+
+        /* 
+         * By the time we get here, it is possible that the shrinker has not 
+         * yet run. splat_linux_drop_slab sends a signal for it to run, but  
+         * there is no guarantee of when it will actually run. We wait for it
+         * to run here, terminating when either the shrinker size is now 0 or
+         * we timeout after 1 second, which should be an eternity (error). 
+         * This is a fix for Issue #96 and Issue #182 
+         */
+        wait_event_timeout(shrinker_wait, (splat_linux_shrinker_size == 0), (HZ*1));
 
 	if (splat_linux_shrinker_size != 0) {
 		splat_vprint(file, SPLAT_LINUX_TEST3_NAME,

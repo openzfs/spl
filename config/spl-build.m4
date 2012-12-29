@@ -1312,8 +1312,9 @@ AC_DEFUN([SPL_AC_3ARGS_ON_EACH_CPU], [
 	AC_MSG_CHECKING([whether on_each_cpu() wants 3 args])
 	SPL_LINUX_TRY_COMPILE([
 		#include <linux/smp.h>
+		static void func(void *arg) {}
 	],[
-		on_each_cpu(NULL, NULL, 0);
+		on_each_cpu(func, NULL, 0);
 	],[
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_3ARGS_ON_EACH_CPU, 1,

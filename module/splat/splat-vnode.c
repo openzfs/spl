@@ -25,6 +25,7 @@
 \*****************************************************************************/
 
 #include <sys/vnode.h>
+#include <linux/kmod.h>
 #include "splat-internal.h"
 
 #define SPLAT_VNODE_NAME		"vnode"

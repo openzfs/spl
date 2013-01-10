@@ -24,6 +24,7 @@
 \*****************************************************************************/
 
 #include <sys/kmem.h>
+#include <linux/kmod.h>
 #include "splat-internal.h"
 
 #define SPLAT_LINUX_NAME		"linux"

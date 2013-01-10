@@ -25,6 +25,7 @@
 \*****************************************************************************/
 
 #include <sys/vnode.h>
+#include <linux/kmod.h>
 #include "splat-internal.h"
 
 #define SPLAT_VNODE_NAME		"vnode"
@@ -75,7 +76,7 @@ splat_vnode_user_cmd(struct file *file, void *arg,
 	                 NULL };
 	int rc;
 
-	rc = call_usermodehelper(sh_path, argv, envp, 1);
+	rc = call_usermodehelper(sh_path, argv, envp, UMH_WAIT_PROC);
 	if (rc) {
 		splat_vprint(file, name,
 			     "Failed command: %s %s %s (%d)\n",

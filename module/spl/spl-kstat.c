@@ -481,14 +481,13 @@ __kstat_install(kstat_t *ksp)
 			SGOTO(out, rc = -EUNATCH);
 	}
 
-	de_name = create_proc_entry(ksp->ks_name, 0444, de_module);
+	de_name = proc_create_data(ksp->ks_name, 0444, de_module,
+			&proc_kstat_operations, ksp);
 	if (de_name == NULL)
 		SGOTO(out, rc = -EUNATCH);
 
 	mutex_enter(&ksp->ks_lock);
 	ksp->ks_proc = de_name;
-	de_name->proc_fops = &proc_kstat_operations;
-        de_name->data = (void *)ksp;
 	mutex_exit(&ksp->ks_lock);
 out:
 	if (rc) {

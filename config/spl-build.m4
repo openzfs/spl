@@ -35,6 +35,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_CTL_NAME
 	SPL_AC_VMALLOC_INFO
 	SPL_AC_PROC_DIR_ENTRY
+	SPL_AC_PROC_CREATE_DATA
 	SPL_AC_FLS64
 	SPL_AC_DEVICE_CREATE
 	SPL_AC_5ARGS_DEVICE_CREATE
@@ -1392,6 +1393,24 @@ AC_DEFUN([SPL_AC_PROC_DIR_ENTRY], [
 	],[
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_PROC_DIR_ENTRY, 1, [yes])
+	],[
+		AC_MSG_RESULT(no)
+	])
+])
+
+dnl #
+dnl # 3.10 API change,
+dnl # create_proc_entry is removed in favor of proc_create
+dnl #
+AC_DEFUN([SPL_AC_PROC_CREATE_DATA], [
+	AC_MSG_CHECKING([whether proc_create_data() is available])
+	SPL_LINUX_TRY_COMPILE_SYMBOL([
+		#include <linux/proc_fs.h>
+	], [
+		proc_create_data("", 0, NULL, NULL, NULL);
+	], [proc_create_data], [], [
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_PROC_CREATE_DATA, 1, [yes])
 	],[
 		AC_MSG_RESULT(no)
 	])

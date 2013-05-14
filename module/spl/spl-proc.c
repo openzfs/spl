@@ -1174,11 +1174,11 @@ spl_proc_init(void)
         if (proc_spl_kmem == NULL)
                 SGOTO(out, rc = -EUNATCH);
 
-	proc_spl_kmem_slab = create_proc_entry("slab", 0444, proc_spl_kmem);
+	proc_spl_kmem_slab = proc_create("slab", 0444, proc_spl_kmem,
+			&proc_slab_operations);
         if (proc_spl_kmem_slab == NULL)
 		SGOTO(out, rc = -EUNATCH);
 
-        proc_spl_kmem_slab->proc_fops = &proc_slab_operations;
 #endif /* DEBUG_KMEM */
 
         proc_spl_kstat = proc_mkdir("kstat", proc_spl);

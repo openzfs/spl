@@ -36,6 +36,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_VMALLOC_INFO
 	SPL_AC_PROC_DIR_ENTRY
 	SPL_AC_PROC_CREATE_DATA
+	SPL_AC_PDE_DATA
 	SPL_AC_FLS64
 	SPL_AC_DEVICE_CREATE
 	SPL_AC_5ARGS_DEVICE_CREATE
@@ -1411,6 +1412,24 @@ AC_DEFUN([SPL_AC_PROC_CREATE_DATA], [
 	], [proc_create_data], [], [
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_PROC_CREATE_DATA, 1, [yes])
+	],[
+		AC_MSG_RESULT(no)
+	])
+])
+
+dnl #
+dnl # 3.10 API change,
+dnl # PDE is replaced by PDE_DATA
+dnl #
+AC_DEFUN([SPL_AC_PDE_DATA], [
+	AC_MSG_CHECKING([whether PDE_DATA() is available])
+	SPL_LINUX_TRY_COMPILE_SYMBOL([
+		#include <linux/proc_fs.h>
+	], [
+		PDE_DATA(NULL);
+	], [PDE_DATA], [], [
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_PDE_DATA, 1, [yes])
 	],[
 		AC_MSG_RESULT(no)
 	])

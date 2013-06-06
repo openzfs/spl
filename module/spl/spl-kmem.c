@@ -1830,7 +1830,7 @@ spl_cache_grow(spl_kmem_cache_t *skc, int flags, void **obj)
 
 		atomic_inc(&skc->skc_ref);
 		ska->ska_cache = skc;
-		ska->ska_flags = flags & ~__GFP_FS;
+		ska->ska_flags = flags & ~(__GFP_IO | __GFP_FS);
 		taskq_init_ent(&ska->ska_tqe);
 		taskq_dispatch_ent(spl_kmem_cache_taskq,
 		    spl_cache_grow_work, ska, 0, &ska->ska_tqe);

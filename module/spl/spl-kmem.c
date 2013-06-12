@@ -1887,7 +1887,7 @@ spl_cache_refill(spl_kmem_cache_t *skc, spl_kmem_magazine_t *skm, int flags)
 	refill = MIN(skm->skm_refill, skm->skm_size - skm->skm_avail);
 	spin_lock(&skc->skc_lock);
 
-	while (refill > 0) {
+	while (refill > 0 && (~flags & __GFP_NORETRY)) {
 		/* No slabs available we may need to grow the cache */
 		if (list_empty(&skc->skc_partial_list)) {
 			spin_unlock(&skc->skc_lock);
@@ -2020,16 +2020,19 @@ restart:
 		skm->skm_age = jiffies;
 	} else {
 		obj = spl_cache_refill(skc, skm, flags);
-		if (obj == NULL)
+		if (obj == NULL && (~flags & __GFP_NORETRY))
 			SGOTO(restart, obj = NULL);
 	}
 
 	local_irq_restore(irq_flags);
-	ASSERT(obj);
-	ASSERT(IS_P2ALIGNED(obj, skc->skc_obj_align));
 
-	/* Pre-emptively migrate object to CPU L1 cache */
-	prefetchw(obj);
+	if (obj) {
+		ASSERT(IS_P2ALIGNED(obj, skc->skc_obj_align));
+
+		/* Pre-emptively migrate object to CPU L1 cache */
+		prefetchw(obj);
+	}
+
 	atomic_dec(&skc->skc_ref);
 
 	SRETURN(obj);

@@ -26,12 +26,40 @@
 
 #include <sys/kmem.h>
 #include <spl-debug.h>
+#include <linux/mempool.h>
 
 #ifdef SS_DEBUG_SUBSYS
 #undef SS_DEBUG_SUBSYS
 #endif
 
 #define SS_DEBUG_SUBSYS SS_KMEM
+#define MIN_SKA_OBJECTS 180
+
+/*
+ * Prevent spl-kmem.h from preventing access to Linux SLAB allocator
+ */
+
+#undef kmem_cache_create
+#undef kmem_cache_destroy
+#undef kmem_cache_alloc
+#undef kmem_cache_free
+
+/*
+ * Linux SLAB cache for spl_kmem_cache_t objects
+ */
+
+static struct kmem_cache *spl_kmem_alloc_cache;
+static mempool_t *ska_mempool;
+
+void *spl_kmem_alloc_mempool(gfp_t gfp_mask, void *unused)
+{
+	return kmem_cache_alloc(spl_kmem_alloc_cache, gfp_mask);
+}
+
+void spl_kmem_free_mempool(void *element, void *unused)
+{
+	kmem_cache_free(spl_kmem_alloc_cache, element);
+}
 
 /*
  * Cache expiration was implemented because it was part of the default Solaris
@@ -1770,7 +1798,7 @@ spl_cache_grow_work(void *data)
 	wake_up_all(&skc->skc_waitq);
 	spin_unlock(&skc->skc_lock);
 
-	kfree(ska);
+	mempool_free(ska, ska_mempool);
 }
 
 /*
@@ -1821,11 +1849,12 @@ spl_cache_grow(spl_kmem_cache_t *skc, int flags, void **obj)
 	if (test_and_set_bit(KMC_BIT_GROWING, &skc->skc_flags) == 0) {
 		spl_kmem_alloc_t *ska;
 
-		ska = kmalloc(sizeof(*ska), flags);
+		ska = mempool_alloc(ska_mempool, GFP_ATOMIC);
 		if (ska == NULL) {
 			clear_bit(KMC_BIT_GROWING, &skc->skc_flags);
 			wake_up_all(&skc->skc_waitq);
-			SRETURN(-ENOMEM);
+			spin_unlock(&skc->skc_lock);
+			SRETURN(rc);
 		}
 
 		atomic_inc(&skc->skc_ref);
@@ -2429,6 +2458,15 @@ spl_kmem_init(void)
 	spl_kmem_init_tracking(&vmem_list, &vmem_lock, VMEM_TABLE_SIZE);
 #endif
 
+	spl_kmem_alloc_cache = kmem_cache_create("spl_kmem_alloc_cache",
+		sizeof(spl_kmem_alloc_t),
+		0,
+		0,
+		NULL);
+
+	ska_mempool = mempool_create(MIN_SKA_OBJECTS,
+		&spl_kmem_alloc_mempool, &spl_kmem_free_mempool, NULL);
+
 	init_rwsem(&spl_kmem_cache_sem);
 	INIT_LIST_HEAD(&spl_kmem_cache_list);
 	spl_kmem_cache_taskq = taskq_create("spl_kmem_cache",
@@ -2466,6 +2504,9 @@ spl_kmem_fini(void)
 	spl_kmem_fini_tracking(&kmem_list, &kmem_lock);
 	spl_kmem_fini_tracking(&vmem_list, &vmem_lock);
 #endif /* DEBUG_KMEM */
+
+	mempool_destroy(ska_mempool);
+	kmem_cache_destroy(spl_kmem_alloc_cache);
 
 	SEXIT;
 }

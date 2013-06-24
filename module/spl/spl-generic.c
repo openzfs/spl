@@ -213,6 +213,13 @@ __umoddi3(uint64_t dividend, uint64_t divisor)
 }
 EXPORT_SYMBOL(__umoddi3);
 
+uint64_t
+__moddi3(int64_t dividend, int64_t divisor)
+{
+	return (dividend - (divisor * __divdi3(dividend, divisor)));
+}
+EXPORT_SYMBOL(__moddi3);
+
 #if defined(__arm) || defined(__arm__)
 /*
  * Implementation of 64-bit (un)signed division for 32-bit arm machines.

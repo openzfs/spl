@@ -33,6 +33,9 @@
 #endif
 
 #define SS_DEBUG_SUBSYS SS_KSTAT
+#ifndef HAVE_PDE_DATA
+#define PDE_DATA(x) (PDE(x)->data)
+#endif
 
 static spinlock_t kstat_lock;
 static struct list_head kstat_list;
@@ -359,7 +362,7 @@ proc_kstat_open(struct inode *inode, struct file *filp)
                 return rc;
 
         f = filp->private_data;
-        f->private = PDE(inode)->data;
+        f->private = PDE_DATA(inode);
 
         return rc;
 }
@@ -481,14 +484,13 @@ __kstat_install(kstat_t *ksp)
 			SGOTO(out, rc = -EUNATCH);
 	}
 
-	de_name = create_proc_entry(ksp->ks_name, 0444, de_module);
+	de_name = proc_create_data(ksp->ks_name, 0444, de_module,
+			&proc_kstat_operations, ksp);
 	if (de_name == NULL)
 		SGOTO(out, rc = -EUNATCH);
 
 	mutex_enter(&ksp->ks_lock);
 	ksp->ks_proc = de_name;
-	de_name->proc_fops = &proc_kstat_operations;
-        de_name->data = (void *)ksp;
 	mutex_exit(&ksp->ks_lock);
 out:
 	if (rc) {

@@ -999,9 +999,6 @@ spl_slab_alloc(spl_kmem_cache_t *skc, int flags)
 		list_add_tail(&sko->sko_list, &sks->sks_free_list);
 	}
 
-	list_for_each_entry(sko, &sks->sks_free_list, sko_list)
-		if (skc->skc_ctor)
-			skc->skc_ctor(sko->sko_addr, skc->skc_private, flags);
 out:
 	if (rc) {
 		if (skc->skc_flags & KMC_OFFSLAB)
@@ -1107,9 +1104,6 @@ spl_slab_reclaim(spl_kmem_cache_t *skc, int count, int flag)
 	list_for_each_entry_safe(sko, n, &sko_list, sko_list) {
 		ASSERT(sko->sko_magic == SKO_MAGIC);
 
-		if (skc->skc_dtor)
-			skc->skc_dtor(sko->sko_addr, skc->skc_private);
-
 		if (skc->skc_flags & KMC_OFFSLAB)
 			kv_free(skc, sko->sko_addr, size);
 	}
@@ -1211,9 +1205,6 @@ spl_emergency_alloc(spl_kmem_cache_t *skc, int flags, void **obj)
 		SRETURN(-EINVAL);
 	}
 
-	if (skc->skc_ctor)
-		skc->skc_ctor(ske->ske_obj, skc->skc_private, flags);
-
 	*obj = ske->ske_obj;
 
 	SRETURN(0);
@@ -1239,9 +1230,6 @@ spl_emergency_free(spl_kmem_cache_t *skc, void *obj)
 
 	if (unlikely(ske == NULL))
 		SRETURN(-ENOENT);
-
-	if (skc->skc_dtor)
-		skc->skc_dtor(ske->ske_obj, skc->skc_private);
 
 	kfree(ske->ske_obj);
 	kfree(ske);
@@ -1988,6 +1976,50 @@ spl_cache_shrink(spl_kmem_cache_t *skc, void *obj)
 }
 
 /*
+ * Helper function to deallocate object. It is used by spl_kmem_cache_free and
+ * spl_kmem_cache_alloc (upon constructor failure). It does not invoke the
+ * destructor.  The caller must hold skc->skc_ref and do its own sanity checks
+ * in assertions.
+ */
+static void
+spl_kmem_cache_dealloc(spl_kmem_cache_t *skc, void *obj)
+{
+	spl_kmem_magazine_t *skm;
+	unsigned long flags;
+	SENTRY;
+
+	/*
+	 * Only virtual slabs may have emergency objects and these objects
+	 * are guaranteed to have physical addresses.  They must be removed
+	 * from the tree of emergency objects and the freed.
+	 */
+	if ((skc->skc_flags & KMC_VMEM) && !kmem_virt(obj))
+		SGOTO(out, spl_emergency_free(skc, obj));
+
+	local_irq_save(flags);
+
+	/* Safe to update per-cpu structure without lock, but
+	 * no remote memory allocation tracking is being performed
+	 * it is entirely possible to allocate an object from one
+	 * CPU cache and return it to another. */
+	skm = skc->skc_mag[smp_processor_id()];
+	ASSERT(skm->skm_magic == SKM_MAGIC);
+
+	/* Per-CPU cache full, flush it to make space */
+	if (unlikely(skm->skm_avail >= skm->skm_size))
+		spl_cache_flush(skc, skm, skm->skm_refill);
+
+	/* Available space in cache, use it */
+	skm->skm_objs[skm->skm_avail++] = obj;
+
+	local_irq_restore(flags);
+out:
+
+	SEXIT;
+}
+
+
+/*
  * Allocate an object from the per-cpu magazine, or if the magazine
  * is empty directly allocate from a slab and repopulate the magazine.
  */
@@ -2032,6 +2064,13 @@ restart:
 
 		/* Pre-emptively migrate object to CPU L1 cache */
 		prefetchw(obj);
+
+		if (skc->skc_ctor &&
+			skc->skc_ctor(obj, skc->skc_private, flags) != 0)
+		{
+			spl_kmem_cache_dealloc(skc, obj);
+			return NULL;
+		}
 	}
 
 	atomic_dec(&skc->skc_ref);
@@ -2049,41 +2088,16 @@ EXPORT_SYMBOL(spl_kmem_cache_alloc);
 void
 spl_kmem_cache_free(spl_kmem_cache_t *skc, void *obj)
 {
-	spl_kmem_magazine_t *skm;
-	unsigned long flags;
 	SENTRY;
 
 	ASSERT(skc->skc_magic == SKC_MAGIC);
 	ASSERT(!test_bit(KMC_BIT_DESTROY, &skc->skc_flags));
 	atomic_inc(&skc->skc_ref);
 
-	/*
-	 * Only virtual slabs may have emergency objects and these objects
-	 * are guaranteed to have physical addresses.  They must be removed
-	 * from the tree of emergency objects and the freed.
-	 */
-	if ((skc->skc_flags & KMC_VMEM) && !kmem_virt(obj))
-		SGOTO(out, spl_emergency_free(skc, obj));
+	if (skc->skc_dtor)
+		skc->skc_dtor(obj, skc->skc_private);
 
-	local_irq_save(flags);
-
-	/* Safe to update per-cpu structure without lock, but
-	 * no remote memory allocation tracking is being performed
-	 * it is entirely possible to allocate an object from one
-	 * CPU cache and return it to another. */
-	skm = skc->skc_mag[smp_processor_id()];
-	ASSERT(skm->skm_magic == SKM_MAGIC);
-
-	/* Per-CPU cache full, flush it to make space */
-	if (unlikely(skm->skm_avail >= skm->skm_size))
-		spl_cache_flush(skc, skm, skm->skm_refill);
-
-	/* Available space in cache, use it */
-	skm->skm_objs[skm->skm_avail++] = obj;
-
-	local_irq_restore(flags);
-out:
-	atomic_dec(&skc->skc_ref);
+	spl_kmem_cache_dealloc(skc, obj);
 
 	SEXIT;
 }

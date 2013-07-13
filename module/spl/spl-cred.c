@@ -36,6 +36,34 @@
 /* Symbol may be exported by custom kernel patch */
 #define cr_groups_search(gi, grp)	groups_search(gi, grp)
 #else
+
+#ifdef HAVE_KUIDGID_T
+
+/* Implementation from 3.8.0 kernel */
+int cr_groups_search(const struct group_info *group_info, kgid_t grp)
+{
+        unsigned int left, right;
+
+        if (!group_info)
+                return 0;
+
+        left = 0;
+        right = group_info->ngroups;
+        while (left < right) {
+                unsigned int mid = (left+right)/2;
+                if (gid_gt(grp, GROUP_AT(group_info, mid)))
+                        left = mid + 1;
+                else if (gid_lt(grp, GROUP_AT(group_info, mid)))
+                        right = mid;
+                else
+                        return 1;
+        }
+        return 0;
+}
+
+
+#else
+
 /* Implementation from 2.6.30 kernel */
 static int
 cr_groups_search(const struct group_info *group_info, gid_t grp)
@@ -59,14 +87,18 @@ cr_groups_search(const struct group_info *group_info, gid_t grp)
 	}
 	return 0;
 }
-#endif
+#endif /* HAVE_KUIDGID_T */
+#endif /* HAVE_GROUPS_SEARCH */
 
 #ifdef HAVE_CRED_STRUCT
+
+
 
 /*
  * As of 2.6.29 a clean credential API appears in the linux kernel.
  * We attempt to layer the Solaris API on top of the linux API.
  */
+
 
 /* Hold a reference on the credential and group info */
 void
@@ -129,6 +161,7 @@ groupmember(gid_t gid, const cred_t *cr)
 
 	return rc;
 }
+
 
 #else /* HAVE_CRED_STRUCT */
 

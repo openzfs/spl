@@ -29,6 +29,8 @@
 #include <sys/types.h>
 #include <sys/vfs.h>
 
+#include <sys/uidgid.h>
+
 #ifdef HAVE_CRED_STRUCT
 
 typedef struct cred cred_t;

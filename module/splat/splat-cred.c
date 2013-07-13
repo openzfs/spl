@@ -45,6 +45,19 @@
 #define GROUP_STR_SIZE			128
 #define GROUP_STR_REDZONE		16
 
+#ifdef HAVE_KUIDGID_T
+ #define KUID_TO_NUMBER(x) (__kuid_val(x))
+ #define KGID_TO_NUMBER(x) (__kgid_val(x))
+ #define NUMBER_TO_KUID(x) (KUIDT_INIT(x))
+ #define NUMBER_TO_KGID(x) (KGIDT_INIT(x))
+#else
+ #define KUID_TO_NUMBER(x) (x)
+ #define KGID_TO_NUMBER(x) (x)
+ #define NUMBER_TO_KUID(x) (x)
+ #define NUMBER_TO_KGID(x) (x)
+
+#endif
+
 static int
 splat_cred_test1(struct file *file, void *arg)
 {
@@ -67,7 +80,7 @@ splat_cred_test1(struct file *file, void *arg)
 
 	memset(str, 0, GROUP_STR_SIZE);
 	for (i = 0; i < ngroups; i++) {
-		count += sprintf(str + count, "%d ", groups[i]);
+		count += sprintf(str + count, "%d ", KGID_TO_NUMBER(groups[i]));
 
 		if (count > (GROUP_STR_SIZE - GROUP_STR_REDZONE)) {
 			splat_vprint(file, SPLAT_CRED_TEST1_NAME,
@@ -78,15 +91,16 @@ splat_cred_test1(struct file *file, void *arg)
 	}
 
 	crfree(CRED());
-
 	splat_vprint(file, SPLAT_CRED_TEST1_NAME,
 		     "uid: %d ruid: %d suid: %d "
 		     "gid: %d rgid: %d sgid: %d\n",
-		     uid, ruid, suid, gid, rgid, sgid);
+		     KUID_TO_NUMBER(uid), KUID_TO_NUMBER(ruid), KUID_TO_NUMBER(suid),
+		     KGID_TO_NUMBER(gid), KGID_TO_NUMBER(rgid), KGID_TO_NUMBER(sgid));
 	splat_vprint(file, SPLAT_CRED_TEST1_NAME,
 		     "ngroups: %d groups: %s\n", ngroups, str);
 
-	if (uid || ruid || suid || gid || rgid || sgid) {
+	if (KUID_TO_NUMBER(uid) || KUID_TO_NUMBER(ruid) || KUID_TO_NUMBER(suid) 
+	 || KGID_TO_NUMBER(gid) || KGID_TO_NUMBER(rgid) || KGID_TO_NUMBER(sgid)) {
 		splat_vprint(file, SPLAT_CRED_TEST1_NAME,
 			     "Failed expected all uids+gids to be %d\n", 0);
 		return -EIDRM;
@@ -127,7 +141,7 @@ splat_cred_test2(struct file *file, void *arg)
 
 	memset(str, 0, GROUP_STR_SIZE);
 	for (i = 0; i < ngroups; i++) {
-		count += sprintf(str + count, "%d ", groups[i]);
+		count += sprintf(str + count, "%d ", KGID_TO_NUMBER(groups[i]));
 
 		if (count > (GROUP_STR_SIZE - GROUP_STR_REDZONE)) {
 			splat_vprint(file, SPLAT_CRED_TEST2_NAME,
@@ -142,11 +156,14 @@ splat_cred_test2(struct file *file, void *arg)
 	splat_vprint(file, SPLAT_CRED_TEST2_NAME,
 		     "uid: %d ruid: %d suid: %d "
 		     "gid: %d rgid: %d sgid: %d\n",
-		     uid, ruid, suid, gid, rgid, sgid);
+		     KUID_TO_NUMBER(uid), KUID_TO_NUMBER(ruid), KUID_TO_NUMBER(suid), 
+		     KGID_TO_NUMBER(gid), KGID_TO_NUMBER(rgid), KGID_TO_NUMBER(sgid));
 	splat_vprint(file, SPLAT_CRED_TEST2_NAME,
 		     "ngroups: %d groups: %s\n", ngroups, str);
 
-	if (uid || ruid || suid || gid || rgid || sgid) {
+        if (KUID_TO_NUMBER(uid) || KUID_TO_NUMBER(ruid) || KUID_TO_NUMBER(suid)
+         || KGID_TO_NUMBER(gid) || KGID_TO_NUMBER(rgid) || KGID_TO_NUMBER(sgid)) {
+                 
 		splat_vprint(file, SPLAT_CRED_TEST2_NAME,
 			     "Failed expected all uids+gids to be %d\n", 0);
 		return -EIDRM;
@@ -179,14 +196,14 @@ splat_cred_test3(struct file *file, void *arg)
 	gid_t root_gid, fake_gid;
 	int rc;
 
-	root_gid = 0;
-	fake_gid = NGROUPS_MAX-1;
+	root_gid = NUMBER_TO_KGID(0);
+	fake_gid = NUMBER_TO_KGID(NGROUPS_MAX-1);
 
 	rc = groupmember(root_gid, CRED());
 	if (!rc) {
 		splat_vprint(file, SPLAT_CRED_TEST3_NAME,
 			     "Failed root git %d expected to be member "
-			     "of CRED() groups: %d\n", root_gid, rc);
+			     "of CRED() groups: %d\n", KGID_TO_NUMBER(root_gid), rc);
 		return -EIDRM;
 	}
 
@@ -194,7 +211,7 @@ splat_cred_test3(struct file *file, void *arg)
 	if (rc) {
 		splat_vprint(file, SPLAT_CRED_TEST3_NAME,
 			     "Failed fake git %d expected not to be member "
-			     "of CRED() groups: %d\n", fake_gid, rc);
+			     "of CRED() groups: %d\n", KGID_TO_NUMBER(fake_gid), rc);
 		return -EIDRM;
 	}
 

@@ -41,6 +41,7 @@
 #include <sys/time.h>
 #include <sys/uio.h>
 #include <sys/sunldi.h>
+#include <sys/uidgid.h>
 
 /*
  * Prior to linux-2.6.33 only O_DSYNC semantics were implemented and

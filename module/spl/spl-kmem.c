@@ -1366,33 +1366,28 @@ spl_slab_size(spl_kmem_cache_t *skc, uint32_t *objs, uint32_t *size)
 {
 	uint32_t sks_size, obj_size, max_size;
 
-	if (skc->skc_flags & KMC_OFFSLAB) {
-		*objs = SPL_KMEM_CACHE_OBJ_PER_SLAB;
-		*size = sizeof(spl_kmem_slab_t);
-	} else {
-		sks_size = spl_sks_size(skc);
-		obj_size = spl_obj_size(skc);
+	sks_size = spl_sks_size(skc);
+	obj_size = spl_obj_size(skc);
 
-		if (skc->skc_flags & KMC_KMEM)
-			max_size = ((uint32_t)1 << (MAX_ORDER-3)) * PAGE_SIZE;
+	if (skc->skc_flags & KMC_KMEM)
+		max_size = ((uint32_t)1 << (MAX_ORDER-3)) * PAGE_SIZE;
+	else
+		max_size = (32 * 1024 * 1024);
+
+	/* Power of two sized slab */
+	for (*size = PAGE_SIZE; *size <= max_size; *size *= 2) {
+		if (skc->skc_flags & KMC_OFFSLAB)
+			*objs = *size / obj_size;
 		else
-			max_size = (32 * 1024 * 1024);
-
-		/* Power of two sized slab */
-		for (*size = PAGE_SIZE; *size <= max_size; *size *= 2) {
 			*objs = (*size - sks_size) / obj_size;
-			if (*objs >= SPL_KMEM_CACHE_OBJ_PER_SLAB)
-				SRETURN(0);
-		}
-
 		/*
-		 * Unable to satisfy target objects per slab, fall back to
+		 * If unable to satisfy target objects per slab, fall back to
 		 * allocating a maximally sized slab and assuming it can
 		 * contain the minimum objects count use it.  If not fail.
 		 */
-		*size = max_size;
-		*objs = (*size - sks_size) / obj_size;
-		if (*objs >= SPL_KMEM_CACHE_OBJ_PER_SLAB_MIN)
+		if (*objs >= SPL_KMEM_CACHE_OBJ_PER_SLAB ||
+			(*size == max_size &&
+				*objs >= SPL_KMEM_CACHE_OBJ_PER_SLAB_MIN))
 			SRETURN(0);
 	}
 

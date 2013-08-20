@@ -1169,6 +1169,7 @@ static int
 spl_emergency_alloc(spl_kmem_cache_t *skc, int flags, void **obj)
 {
 	spl_kmem_emergency_t *ske;
+	uint32_t obj_size = skc->skc_obj_size;
 	int empty;
 	SENTRY;
 
@@ -1179,13 +1180,18 @@ spl_emergency_alloc(spl_kmem_cache_t *skc, int flags, void **obj)
 	if (!empty)
 		SRETURN(-EEXIST);
 
-	ske = kmalloc(sizeof(*ske), flags);
+	ske = (void *)__get_free_page(flags);
 	if (ske == NULL)
 		SRETURN(-ENOMEM);
 
-	ske->ske_obj = kmalloc(skc->skc_obj_size, flags);
+	if (obj_size + P2ROUNDUP(sizeof(*ske), skc->skc_obj_align) <= PAGE_SIZE)
+		ske->ske_obj = ske + P2ROUNDUP(sizeof(*ske), skc->skc_obj_align);
+	else if (obj_size <= PAGE_SIZE)
+		ske->ske_obj = (void *)__get_free_page(flags);
+	else
+		ske->ske_obj = kmalloc(skc->skc_obj_size, flags);
 	if (ske->ske_obj == NULL) {
-		kfree(ske);
+		free_page((unsigned long)ske);
 		SRETURN(-ENOMEM);
 	}
 
@@ -1200,8 +1206,13 @@ spl_emergency_alloc(spl_kmem_cache_t *skc, int flags, void **obj)
 	spin_unlock(&skc->skc_lock);
 
 	if (unlikely(!empty)) {
-		kfree(ske->ske_obj);
-		kfree(ske);
+		if (obj_size + P2ROUNDUP(sizeof(*ske), skc->skc_obj_align) <= PAGE_SIZE);
+		else if (obj_size <= PAGE_SIZE)
+			free_page((unsigned long)ske->ske_obj);
+		else
+			kfree(ske->ske_obj);
+
+		free_page((unsigned long)ske);
 		SRETURN(-EINVAL);
 	}
 
@@ -1217,6 +1228,7 @@ static int
 spl_emergency_free(spl_kmem_cache_t *skc, void *obj)
 {
 	spl_kmem_emergency_t *ske;
+	uint32_t obj_size = skc->skc_obj_size;
 	SENTRY;
 
 	spin_lock(&skc->skc_lock);
@@ -1231,8 +1243,13 @@ spl_emergency_free(spl_kmem_cache_t *skc, void *obj)
 	if (unlikely(ske == NULL))
 		SRETURN(-ENOENT);
 
-	kfree(ske->ske_obj);
-	kfree(ske);
+	if (obj_size + P2ROUNDUP(sizeof(*ske), skc->skc_obj_align) <= PAGE_SIZE);
+	else if (obj_size <= PAGE_SIZE)
+		free_page((unsigned long)ske->ske_obj);
+	else
+		kfree(ske->ske_obj);
+
+	free_page((unsigned long)ske);
 
 	SRETURN(0);
 }

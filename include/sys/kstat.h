@@ -176,6 +176,7 @@ typedef struct kstat_txg {
         u_longlong_t       txg;         /* txg id */
         kstat_txg_state_t  state;       /* txg state */
         hrtime_t           birth;       /* birth time stamp */
+        u_longlong_t       nreserved;   /* number of bytes reserved */
         u_longlong_t       nread;       /* number of bytes read */
         u_longlong_t       nwritten;    /* number of bytes written */
         uint_t             reads;       /* number of read operations */

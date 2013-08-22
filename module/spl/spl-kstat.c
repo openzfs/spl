@@ -83,9 +83,9 @@ kstat_seq_show_headers(struct seq_file *f)
                         break;
                 case KSTAT_TYPE_TXG:
                         seq_printf(f,
-                                   "%-8s %-5s %-13s %-12s %-12s %-8s %-8s "
-                                   "%-12s %-12s %-12s\n",
-                                   "txg", "state", "birth",
+                                   "%-8s %-5s %-13s %-12s %-12s %-12s %-8s "
+                                   "%-8s %-12s %-12s %-12s\n",
+                                   "txg", "state", "birth", "nreserved",
                                    "nread", "nwritten", "reads", "writes",
                                    "otime", "qtime", "stime");
                         break;
@@ -215,10 +215,11 @@ kstat_seq_show_txg(struct seq_file *f, kstat_txg_t *ktp)
 	}
 
         seq_printf(f,
-                   "%-8llu %-5c %-13llu %-12llu %-12llu %-8u %-8u "
+                   "%-8llu %-5c %-13llu %-12llu %-12llu %-12llu %-8u %-8u "
                    "%12lld %12lld %12lld\n", ktp->txg, state, ktp->birth,
-                    ktp->nread, ktp->nwritten, ktp->reads, ktp->writes,
-                    ktp->open_time, ktp->quiesce_time, ktp->sync_time);
+                    ktp->nreserved, ktp->nread, ktp->nwritten, ktp->reads,
+                    ktp->writes, ktp->open_time, ktp->quiesce_time,
+                    ktp->sync_time);
 	return 0;
 }
 

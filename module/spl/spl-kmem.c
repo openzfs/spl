@@ -1740,8 +1740,8 @@ spl_cache_obj(spl_kmem_cache_t *skc, spl_kmem_slab_t *sks)
 static void
 spl_cache_grow_work(void *data)
 {
-	spl_kmem_alloc_t *ska = (spl_kmem_alloc_t *)data;
-	spl_kmem_cache_t *skc = ska->ska_cache;
+	spl_kmem_cache_t *skc = (spl_kmem_cache_t *)data;
+	spl_kmem_alloc_t *ska = &skc->skc_alloc;
 	spl_kmem_slab_t *sks = NULL;
 
 	while (1) {
@@ -1761,8 +1761,6 @@ spl_cache_grow_work(void *data)
 	clear_bit(KMC_BIT_GROWING, &skc->skc_flags);
 	wake_up_all(&skc->skc_waitq);
 	spin_unlock(&skc->skc_lock);
-
-	kfree(ska);
 }
 
 /*
@@ -1811,21 +1809,13 @@ spl_cache_grow(spl_kmem_cache_t *skc, int flags, void **obj)
 	 * allocations to ensure forward progress is always maintained.
 	 */
 	if (test_and_set_bit(KMC_BIT_GROWING, &skc->skc_flags) == 0) {
-		spl_kmem_alloc_t *ska;
-
-		ska = kmalloc(sizeof(*ska), flags);
-		if (ska == NULL) {
-			clear_bit(KMC_BIT_GROWING, &skc->skc_flags);
-			wake_up_all(&skc->skc_waitq);
-			SRETURN(-ENOMEM);
-		}
+		spl_kmem_alloc_t *ska = &skc->skc_alloc;
 
 		atomic_inc(&skc->skc_ref);
-		ska->ska_cache = skc;
 		ska->ska_flags = flags & ~__GFP_NORETRY;
 		taskq_init_ent(&ska->ska_tqe);
 		taskq_dispatch_ent(spl_kmem_cache_taskq,
-		    spl_cache_grow_work, ska, 0, &ska->ska_tqe);
+		    spl_cache_grow_work, skc, 0, &ska->ska_tqe);
 	}
 
 	/*

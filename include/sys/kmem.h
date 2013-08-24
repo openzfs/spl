@@ -432,7 +432,6 @@ typedef struct spl_kmem_slab {
 } spl_kmem_slab_t;
 
 typedef struct spl_kmem_alloc {
-	struct spl_kmem_cache	*ska_cache;	/* Owned by cache */
 	int			ska_flags;	/* Allocation flags */
 	taskq_ent_t		ska_tqe;	/* Task queue entry */
 } spl_kmem_alloc_t;
@@ -481,6 +480,7 @@ typedef struct spl_kmem_cache {
 	uint64_t		skc_obj_deadlock;  /* Obj emergency deadlocks */
 	uint64_t		skc_obj_emergency; /* Obj emergency current */
 	uint64_t		skc_obj_emergency_max; /* Obj emergency max */
+	spl_kmem_alloc_t	skc_alloc;	/* Memory for spl_cache_grow */
 } spl_kmem_cache_t;
 #define kmem_cache_t		spl_kmem_cache_t
 

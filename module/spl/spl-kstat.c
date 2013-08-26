@@ -41,6 +41,72 @@ static kmutex_t kstat_module_lock;
 static struct list_head kstat_module_list;
 static kid_t kstat_id;
 
+void
+kstat_waitq_enter(kstat_io_t *kiop)
+{
+        hrtime_t new, delta;
+        ulong_t wcnt;
+
+        new = gethrtime();
+        delta = new - kiop->wlastupdate;
+        kiop->wlastupdate = new;
+        wcnt = kiop->wcnt++;
+        if (wcnt != 0) {
+                kiop->wlentime += delta * wcnt;
+                kiop->wtime += delta;
+        }
+}
+EXPORT_SYMBOL(kstat_waitq_enter);
+
+void
+kstat_waitq_exit(kstat_io_t *kiop)
+{
+        hrtime_t new, delta;
+        ulong_t wcnt;
+
+        new = gethrtime();
+        delta = new - kiop->wlastupdate;
+        kiop->wlastupdate = new;
+        wcnt = kiop->wcnt--;
+        ASSERT((int)wcnt > 0);
+        kiop->wlentime += delta * wcnt;
+        kiop->wtime += delta;
+}
+EXPORT_SYMBOL(kstat_waitq_exit);
+
+void
+kstat_runq_enter(kstat_io_t *kiop)
+{
+        hrtime_t new, delta;
+        ulong_t rcnt;
+
+        new = gethrtime();
+        delta = new - kiop->rlastupdate;
+        kiop->rlastupdate = new;
+        rcnt = kiop->rcnt++;
+        if (rcnt != 0) {
+                kiop->rlentime += delta * rcnt;
+                kiop->rtime += delta;
+        }
+}
+EXPORT_SYMBOL(kstat_runq_enter);
+
+void
+kstat_runq_exit(kstat_io_t *kiop)
+{
+        hrtime_t new, delta;
+        ulong_t rcnt;
+
+        new = gethrtime();
+        delta = new - kiop->rlastupdate;
+        kiop->rlastupdate = new;
+        rcnt = kiop->rcnt--;
+        ASSERT((int)rcnt > 0);
+        kiop->rlentime += delta * rcnt;
+        kiop->rtime += delta;
+}
+EXPORT_SYMBOL(kstat_runq_exit);
+
 static void
 kstat_seq_show_headers(struct seq_file *f)
 {
@@ -486,7 +552,7 @@ __kstat_create(const char *ks_module, int ks_instance, const char *ks_name,
 	if (ksp->ks_flags & KSTAT_FLAG_VIRTUAL) {
                 ksp->ks_data = NULL;
         } else {
-                ksp->ks_data = kmem_alloc(ksp->ks_data_size, KM_SLEEP);
+                ksp->ks_data = kmem_zalloc(ksp->ks_data_size, KM_SLEEP);
                 if (ksp->ks_data == NULL) {
                         kmem_free(ksp, sizeof(*ksp));
                         ksp = NULL;

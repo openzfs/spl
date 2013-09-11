@@ -1,4 +1,4 @@
-spl-linux (0.6.2-1) experimental; urgency=low
+spl-linux (0.6.2-1) wheezy; urgency=low
 
   * New upstream release.
 

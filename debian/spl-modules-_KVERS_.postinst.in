@@ -1,0 +1,47 @@
+#!/bin/sh
+set -e
+# The hostname and hostid of the last system to access a ZFS pool are stored in
+# the ZFS pool itself.  A pool is foreign if, during `zpool import`, the
+# current hostname and hostid are different than the stored values thereof.
+#
+# The hostid on Solaris is intrinsic, but is not on Linux (see #595790), so the
+# spl kernel module invokes /usr/bin/hostid from the userland in its initialization
+# routine.
+#
+# /usr/bin/hostid will return the 4 first bytes of the file /etc/hostid.
+# If this file is not present or contains less than 4 bytes, then /usr/bin/hostid
+# will return the bytes of the IP address of $(hostname) flipped, or zero if
+# such IP couldn't be obtained
+#
+# This means that things like a DHCP lease change can affect the hostid.
+#
+# Therefore the only way of having a stable hostid is to define it on /etc/hostid.
+# This postinst helper will check if we already have the hostid stabilized by
+# checking the existence of the file /etc/hostid to be 4 bytes at least.
+# If this file don't already exists on our system or has less than 4 bytes, then
+# we will stabilize our current hostid by writing its value to /etc/hostid
+
+# Run depmod first
+depmod
+
+# Deal with hostid issue as usual
+if [ ! -f /etc/hostid ] || [ $(stat -c %s /etc/hostid) -lt 4 ] ; then
+
+	# Write our current hostid to /etc/hostid
+	HOSTID=$(hostid)
+	AA=$(echo $HOSTID | cut -b 1,2)
+	BB=$(echo $HOSTID | cut -b 3,4)
+	CC=$(echo $HOSTID | cut -b 5,6)
+	DD=$(echo $HOSTID | cut -b 7,8)
+
+	# Big Endian
+	if echo | gcc -E -dM - | grep -q "__BYTE_ORDER__.*__ORDER_BIG_ENDIAN__"; then
+		# Invoke the printf from coreutils. shell builtin lacks the byte format.
+		/usr/bin/printf "\x$AA\x$BB\x$CC\x$DD" >/etc/hostid
+	else
+	# Little Endian
+		/usr/bin/printf "\x$DD\x$CC\x$BB\x$AA" >/etc/hostid
+	fi
+fi
+
+#DEBHELPER#

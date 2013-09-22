@@ -24,3 +24,12 @@ compilation:
 
 Full documentation for building, configuring, and using the SPL can
 be found at: <http://zfsonlinux.org>
+
+Running tests
+-------------
+
+SPL comes with automated tests called SPLAT. SPLAT is implemented
+as a kernel module, and it can be run from a userspace tool `splat`.
+
+    $ sudo insmod ./module/splat/splat.ko
+    $ sudo ./cmd/splat --all

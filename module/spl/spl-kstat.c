@@ -54,7 +54,13 @@ kstat_seq_show_headers(struct seq_file *f)
 
 	switch (ksp->ks_type) {
                 case KSTAT_TYPE_RAW:
-                        seq_printf(f, "raw data");
+                        if (ksp->ks_raw_ops.headers) {
+                                ksp->ks_raw_ops.headers(
+                                    ksp->ks_raw_buf, ksp->ks_raw_bufsize);
+                                seq_puts(f, ksp->ks_raw_buf);
+                        } else {
+                                seq_printf(f, "raw data\n");
+                        }
                         break;
                 case KSTAT_TYPE_NAMED:
                         seq_printf(f, "%-31s %-4s %s\n",
@@ -232,9 +238,15 @@ kstat_seq_show(struct seq_file *f, void *p)
 
 	switch (ksp->ks_type) {
                 case KSTAT_TYPE_RAW:
-                        ASSERT(ksp->ks_ndata == 1);
-                        rc = kstat_seq_show_raw(f, ksp->ks_data,
-                                                ksp->ks_data_size);
+                        if (ksp->ks_raw_ops.data) {
+                                ksp->ks_raw_ops.data(
+                                    ksp->ks_raw_buf, ksp->ks_raw_bufsize, p);
+                                seq_puts(f, ksp->ks_raw_buf);
+                        } else {
+                                ASSERT(ksp->ks_ndata == 1);
+                                rc = kstat_seq_show_raw(f, ksp->ks_data,
+                                                        ksp->ks_data_size);
+                        }
                         break;
                 case KSTAT_TYPE_NAMED:
                         rc = kstat_seq_show_named(f, (kstat_named_t *)p);
@@ -273,7 +285,10 @@ kstat_seq_data_addr(kstat_t *ksp, loff_t n)
 
 	switch (ksp->ks_type) {
                 case KSTAT_TYPE_RAW:
-	                rc = ksp->ks_data;
+                        if (ksp->ks_raw_ops.addr)
+                                rc = ksp->ks_raw_ops.addr(ksp, n);
+                        else
+                                rc = ksp->ks_data;
                         break;
                 case KSTAT_TYPE_NAMED:
                         rc = ksp->ks_data + n * sizeof(kstat_named_t);
@@ -306,6 +321,13 @@ kstat_seq_start(struct seq_file *f, loff_t *pos)
         SENTRY;
 
         mutex_enter(&ksp->ks_lock);
+
+        if (ksp->ks_type == KSTAT_TYPE_RAW) {
+                ksp->ks_raw_buf = (char *)__get_free_page(GFP_KERNEL);
+                if (ksp->ks_raw_buf == NULL)
+                        SRETURN(NULL);
+                ksp->ks_raw_bufsize = PAGE_SIZE;
+        }
 
         /* Dynamically update kstat, on error existing kstats are used */
         (void) ksp->ks_update(ksp, KSTAT_READ);
@@ -340,6 +362,9 @@ kstat_seq_stop(struct seq_file *f, void *v)
 {
         kstat_t *ksp = (kstat_t *)f->private;
         ASSERT(ksp->ks_magic == KS_MAGIC);
+
+        if (ksp->ks_raw_buf != NULL)
+                free_page((unsigned long)ksp->ks_raw_buf);
 
         mutex_exit(&ksp->ks_lock);
 }
@@ -415,6 +440,18 @@ static struct file_operations proc_kstat_operations = {
         .release        = seq_release,
 };
 
+void
+__kstat_set_raw_ops(kstat_t *ksp,
+		    void  (*headers)(char *buf, size_t size),
+		    void  (*data)(char *buf, size_t size, void *data),
+		    void* (*addr)(kstat_t *ksp, loff_t index))
+{
+	ksp->ks_raw_ops.headers = headers;
+	ksp->ks_raw_ops.data    = data;
+	ksp->ks_raw_ops.addr    = addr;
+}
+EXPORT_SYMBOL(__kstat_set_raw_ops);
+
 kstat_t *
 __kstat_create(const char *ks_module, int ks_instance, const char *ks_name,
              const char *ks_class, uchar_t ks_type, uint_t ks_ndata,
@@ -453,6 +490,11 @@ __kstat_create(const char *ks_module, int ks_instance, const char *ks_name,
 	ksp->ks_flags = ks_flags;
 	ksp->ks_update = kstat_default_update;
 	ksp->ks_private = NULL;
+	ksp->ks_raw_ops.headers = NULL;
+	ksp->ks_raw_ops.data = NULL;
+	ksp->ks_raw_ops.addr = NULL;
+	ksp->ks_raw_buf = NULL;
+	ksp->ks_raw_bufsize = 0;
 
 	switch (ksp->ks_type) {
                 case KSTAT_TYPE_RAW:

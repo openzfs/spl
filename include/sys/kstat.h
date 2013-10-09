@@ -107,7 +107,8 @@ typedef struct kstat_s {
         struct proc_dir_entry *ks_proc;             /* proc linkage */
         kstat_update_t   *ks_update;                /* dynamic updates */
         void             *ks_private;               /* private data */
-        kmutex_t         ks_lock;                   /* kstat data lock */
+	kmutex_t         ks_private_lock;           /* kstat private data lock */
+	kmutex_t         *ks_lock;                  /* kstat data lock */
         struct list_head ks_list;                   /* kstat linkage */
 	kstat_module_t   *ks_owner;                 /* kstat module linkage */
 } kstat_t;
@@ -194,6 +195,10 @@ extern kstat_t *__kstat_create(const char *ks_module, int ks_instance,
 			     uchar_t ks_flags);
 extern void __kstat_install(kstat_t *ksp);
 extern void __kstat_delete(kstat_t *ksp);
+extern void kstat_waitq_enter(kstat_io_t *);
+extern void kstat_waitq_exit(kstat_io_t *);
+extern void kstat_runq_enter(kstat_io_t *);
+extern void kstat_runq_exit(kstat_io_t *);
 
 #define kstat_create(m,i,n,c,t,s,f)	__kstat_create(m,i,n,c,t,s,f)
 #define kstat_install(k)		__kstat_install(k)

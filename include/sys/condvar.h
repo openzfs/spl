@@ -29,6 +29,7 @@
 #include <linux/wait.h>
 #include <sys/kmem.h>
 #include <sys/mutex.h>
+#include <sys/callo.h>
 
 /*
  * The kcondvar_t struct is protected by mutex taken externally before
@@ -56,6 +57,8 @@ extern void __cv_wait_interruptible(kcondvar_t *cvp, kmutex_t *mp);
 extern clock_t __cv_timedwait(kcondvar_t *cvp, kmutex_t *mp, clock_t exp_time);
 extern clock_t __cv_timedwait_interruptible(kcondvar_t *cvp, kmutex_t *mp,
 	clock_t exp_time);
+extern	clock_t	__cv_timedwait_hires(kcondvar_t *cvp, kmutex_t *mp,
+	hrtime_t tim, hrtime_t res, int flag);
 extern void __cv_signal(kcondvar_t *cvp);
 extern void __cv_broadcast(kcondvar_t *cvp);
 
@@ -67,6 +70,8 @@ extern void __cv_broadcast(kcondvar_t *cvp);
 #define cv_timedwait(cvp, mp, t)		__cv_timedwait(cvp, mp, t)
 #define cv_timedwait_interruptible(cvp, mp, t)                                \
 	__cv_timedwait_interruptible(cvp, mp, t)
+#define cv_timedwait_hires(cvp, mp, t, r, f)                                  \
+	__cv_timedwait_hires(cvp, mp, t, r, f)
 #define cv_signal(cvp)				__cv_signal(cvp)
 #define cv_broadcast(cvp)			__cv_broadcast(cvp)
 

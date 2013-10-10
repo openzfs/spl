@@ -226,6 +226,35 @@ __cv_timedwait_interruptible(kcondvar_t *cvp, kmutex_t *mp, clock_t exp_time)
 }
 EXPORT_SYMBOL(__cv_timedwait_interruptible);
 
+/*
+ * Compatibility wrapper for the cv_timedwait_hires() Illumos interface.
+ * Does not actually provide high resolution timing, but rather converts
+ * hrtime_t to jiffies and calls the normal resolution timedwait function.
+ */
+clock_t
+__cv_timedwait_hires(kcondvar_t *cvp, kmutex_t *mp, hrtime_t tim,
+	hrtime_t res, int flag)
+{
+	clock_t exp_time;
+
+	if (res > 1) {
+		/*
+		 * Align expiration to the specified resolution.
+		 */
+		if (flag & CALLOUT_FLAG_ROUNDUP)
+			tim += res - 1;
+		tim = (tim / res) * res;
+	}
+
+	exp_time = msecs_to_jiffies(NSEC2MSEC(tim));
+
+	if (!(flag & CALLOUT_FLAG_ABSOLUTE))
+		exp_time += jiffies;
+
+	return __cv_timedwait_common(cvp, mp, exp_time, TASK_UNINTERRUPTIBLE);
+}
+EXPORT_SYMBOL(__cv_timedwait_hires);
+
 void
 __cv_signal(kcondvar_t *cvp)
 {

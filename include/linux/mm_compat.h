@@ -148,7 +148,7 @@ extern shrink_icache_memory_t shrink_icache_memory_fn;
 #endif /* HAVE_SHRINK_ICACHE_MEMORY */
 
 /*
- * Linux 2.6. - 2.6. Shrinker API Compatibility.
+ * Linux 2.6.22 and earlier Shrinker API Compatibility.
  */
 #ifdef HAVE_SET_SHRINKER
 typedef struct spl_shrinker {
@@ -194,28 +194,38 @@ fn(int nr_to_scan, unsigned int gfp_mask)                              \
 
 # define spl_register_shrinker(x)	register_shrinker(x)
 # define spl_unregister_shrinker(x)	unregister_shrinker(x)
-# define SPL_SHRINKER_DECLARE(s, x, y)                                 \
+
+/*
+ * Linux 2.6.23 - 2.6.34 Shrinker API Compatibility.
+ */
+# if defined(HAVE_2ARGS_OLD_SHRINKER_CALLBACK)
+#  define SPL_SHRINKER_DECLARE(s, x, y)                                \
 	static struct shrinker s = {                                   \
 		.shrink = x,                                           \
 		.seeks = y                                             \
 	}
-
-/*
- * Linux 2.6. - 2.6. Shrinker API Compatibility.
- */
-# if defined(HAVE_SHRINK_CONTROL_STRUCT)
-#  define SPL_SHRINKER_CALLBACK_FWD_DECLARE(fn)                        \
-	static int fn(struct shrinker *, struct shrink_control *)
-#  define SPL_SHRINKER_CALLBACK_WRAPPER(fn)                            \
-static int                                                             \
-fn(struct shrinker *shrink, struct shrink_control *sc) {               \
-	return __ ## fn(shrink, sc);                                   \
+#  define SPL_SHRINKER_CALLBACK_FWD_DECLARE(fn)                       \
+	static int fn(int nr_to_scan, unsigned int gfp_mask)
+#  define SPL_SHRINKER_CALLBACK_WRAPPER(fn)                           \
+static int                                                            \
+fn(int nr_to_scan, unsigned int gfp_mask)                             \
+{                                                                     \
+	struct shrink_control sc;                                     \
+                                                                      \
+        sc.nr_to_scan = nr_to_scan;                                   \
+        sc.gfp_mask = gfp_mask;                                       \
+                                                                      \
+	return __ ## fn(NULL, &sc);                                   \
 }
-
 /*
- * Linux 2.6. - 2.6. Shrinker API Compatibility.
+ * Linux 2.6.35 to 2.6.39 Shrinker API Compatibility.
  */
 # elif defined(HAVE_3ARGS_SHRINKER_CALLBACK)
+#  define SPL_SHRINKER_DECLARE(s, x, y)                                \
+	static struct shrinker s = {                                   \
+		.shrink = x,                                           \
+		.seeks = y                                             \
+	}
 #  define SPL_SHRINKER_CALLBACK_FWD_DECLARE(fn)                       \
 	static int fn(struct shrinker *, int, unsigned int)
 #  define SPL_SHRINKER_CALLBACK_WRAPPER(fn)                           \
@@ -231,23 +241,58 @@ fn(struct shrinker *shrink, int nr_to_scan, unsigned int gfp_mask)    \
 }
 
 /*
- * Linux 2.6. - 2.6. Shrinker API Compatibility.
+ * Linux 3.0 to 3.11 Shrinker API Compatibility.
  */
-# else
-#  define SPL_SHRINKER_CALLBACK_FWD_DECLARE(fn)                       \
-	static int fn(int, unsigned int)
-#  define SPL_SHRINKER_CALLBACK_WRAPPER(fn)                           \
-static int                                                            \
-fn(int nr_to_scan, unsigned int gfp_mask)                             \
-{                                                                     \
-	struct shrink_control sc;                                     \
-                                                                      \
-        sc.nr_to_scan = nr_to_scan;                                   \
-        sc.gfp_mask = gfp_mask;                                       \
-                                                                      \
-	return __ ## fn(NULL, &sc);                                   \
+# elif defined(HAVE_2ARGS_NEW_SHRINKER_CALLBACK)
+#  define SPL_SHRINKER_DECLARE(s, x, y)                                \
+	static struct shrinker s = {                                   \
+		.shrink = x,                                           \
+		.seeks = y                                             \
+	}
+#  define SPL_SHRINKER_CALLBACK_FWD_DECLARE(fn)                        \
+       static int fn(struct shrinker *, struct shrink_control *)
+#  define SPL_SHRINKER_CALLBACK_WRAPPER(fn)                            \
+static int                                                             \
+fn(struct shrinker *shrink, struct shrink_control *sc) {               \
+       return __ ## fn(shrink, sc);                                   \
 }
-
+/*
+ * Linux 3.12 and later Shrinker API Compatibility.
+ */
+# elif defined(HAVE_SPLIT_SHRINKER_CALLBACK)
+#  define SPL_SHRINKER_DECLARE(s, x, y)                               \
+	static struct shrinker s = {                                  \
+		.count_objects = x ## _count_objects,                 \
+		.scan_objects = x ## _scan_objects,                   \
+		.seeks = y                                            \
+	}
+#  define SPL_SHRINKER_CALLBACK_FWD_DECLARE(fn)                       \
+	static unsigned long fn ## _count_objects(struct shrinker *,  \
+		struct shrink_control *);                             \
+	static unsigned long fn ## _scan_objects(struct shrinker *,   \
+		struct shrink_control *)
+#  define SPL_SHRINKER_CALLBACK_WRAPPER(fn)                           \
+static unsigned long                                                  \
+fn ## _count_objects(struct shrinker *shrink,                         \
+	struct shrink_control *sc)                                    \
+{                                                                     \
+        int ret;                                                      \
+        sc->nr_to_scan = 0;                                           \
+                                                                      \
+	ret = __ ## fn(NULL, sc);                                     \
+	return (ret < 0) ? 0 : ret;                                   \
+}                                                                     \
+static unsigned long                                                  \
+fn ## _scan_objects(struct shrinker *shrink,                          \
+	struct shrink_control *sc)                                    \
+{                                                                     \
+        int ret;                                                      \
+                                                                      \
+	ret = __ ## fn(NULL, sc);                                     \
+	return (ret < 0) ? 0 : ret;                                   \
+}
+# else
+#  error "Unknown shrinker callback"
 # endif
 #endif /* HAVE_SET_SHRINKER */
 

@@ -82,7 +82,7 @@ struct vmalloc_info {
 #endif
 
 typedef void (*get_vmalloc_info_t)(struct vmalloc_info *);
-extern get_vmalloc_info_t get_vmalloc_info_fn;
+//extern get_vmalloc_info_t get_vmalloc_info_fn;
 
 # define VMEM_ALLOC		0x01
 # define VMEM_FREE		0x02

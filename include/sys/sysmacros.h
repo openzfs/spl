@@ -111,7 +111,11 @@
 /* Map some simple functions.
  */
 #define bzero(ptr,size)			memset(ptr,0,size)
-#define bcopy(src,dest,size)		memcpy(dest,src,size)
+#if defined(__sparc)
+	#define bcopy(src,dest,size)		memcpy(dest,src,size)
+#else
+	#define bcopy(src,dest,size)    memmove(dest,src,size)	
+#endif
 #define bcmp(src,dest,size)		memcmp((src), (dest), (size_t)(size))
 
 /* Dtrace probes do not exist in the linux kernel */

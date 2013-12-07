@@ -1267,8 +1267,14 @@ __spl_cache_flush(spl_kmem_cache_t *skc, spl_kmem_magazine_t *skm, int flush)
 		spl_cache_shrink(skc, skm->skm_objs[i]);
 
 	skm->skm_avail -= count;
-	memcpy(skm->skm_objs, &(skm->skm_objs[count]),
+	// there is no memmove in sparc kernels
+	#if defined(__sparc) 
+		memcpy(skm->skm_objs, &(skm->skm_objs[count]),
 	        sizeof(void *) * skm->skm_avail);
+	#else
+		memmove(skm->skm_objs, &(skm->skm_objs[count]),
+		sizeof(void *) * skm->skm_avail);
+	#endif
 
 	SEXIT;
 }

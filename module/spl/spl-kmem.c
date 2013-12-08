@@ -1617,33 +1617,60 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 	skc->skc_obj_emergency = 0;
 	skc->skc_obj_emergency_max = 0;
 
-	if (align) {
-		VERIFY(ISP2(align));
-		VERIFY3U(align, >=, SPL_KMEM_CACHE_ALIGN); /* Min alignment */
-		VERIFY3U(align, <=, PAGE_SIZE);            /* Max alignment */
-		skc->skc_obj_align = align;
+
+	if (size < 1536) {
+		/*
+		 * When the size of each object is relatively small
+		 * the kernel SLAB code is much more space-efficient.
+		 * We use that instead.
+		 */
+
+#undef kmem_cache_create   /* I need the real kernel SLAB allocator */
+		skc->skc_flags |= KMC_LINUXSLAB;
+		skc->skc_flags &= ~(KMC_VMEM | KMC_KMEM);
+		skc->skc_linux_cache = kmem_cache_create(skc->skc_name, size, align, 0, NULL);
+		if (skc->skc_linux_cache == NULL) {
+			kmem_free(skc->skc_name, skc->skc_name_size);
+			kmem_free(skc, sizeof(*skc));
+			SRETURN(NULL);
+		}
+
+	} else {
+		/*
+		 * When the size of each object is relatively large
+		 * our own SLAB allocator uses vmalloc() internally
+		 * which is better for successful allocations of slabs.
+		 */
+
+		if (align) {
+			VERIFY(ISP2(align));
+			VERIFY3U(align, >=, SPL_KMEM_CACHE_ALIGN);	/* Min alignment */
+			VERIFY3U(align, <=, PAGE_SIZE);				/* Max alignment */
+			skc->skc_obj_align = align;
+		}
+
+		/* If none passed select a cache type based on object size */
+		if (!(skc->skc_flags & (KMC_KMEM | KMC_VMEM))) {
+			if (spl_obj_size(skc) < (PAGE_SIZE / 8))
+				skc->skc_flags |= KMC_KMEM;
+			else
+				skc->skc_flags |= KMC_VMEM;
+		}
+
+		rc = spl_slab_size(skc, &skc->skc_slab_objs, &skc->skc_slab_size);
+		if (rc)
+			SGOTO(out, rc);
+
+		rc = spl_magazine_create(skc);
+		if (rc)
+			SGOTO(out, rc);
+
+		if (spl_kmem_cache_expire & KMC_EXPIRE_AGE)
+			skc->skc_taskqid = taskq_dispatch_delay(spl_kmem_cache_taskq,
+				spl_cache_age, skc, TQ_SLEEP,
+				ddi_get_lbolt() + skc->skc_delay / 3 * HZ);
+
 	}
-
-	/* If none passed select a cache type based on object size */
-	if (!(skc->skc_flags & (KMC_KMEM | KMC_VMEM))) {
-		if (spl_obj_size(skc) < (PAGE_SIZE / 8))
-			skc->skc_flags |= KMC_KMEM;
-		else
-			skc->skc_flags |= KMC_VMEM;
-	}
-
-	rc = spl_slab_size(skc, &skc->skc_slab_objs, &skc->skc_slab_size);
-	if (rc)
-		SGOTO(out, rc);
-
-	rc = spl_magazine_create(skc);
-	if (rc)
-		SGOTO(out, rc);
-
-	if (spl_kmem_cache_expire & KMC_EXPIRE_AGE)
-		skc->skc_taskqid = taskq_dispatch_delay(spl_kmem_cache_taskq,
-		    spl_cache_age, skc, TQ_SLEEP,
-		    ddi_get_lbolt() + skc->skc_delay / 3 * HZ);
 
 	down_write(&spl_kmem_cache_sem);
 	list_add_tail(&skc->skc_list, &spl_kmem_cache_list);
@@ -1685,6 +1712,12 @@ spl_kmem_cache_destroy(spl_kmem_cache_t *skc)
 	list_del_init(&skc->skc_list);
 	up_write(&spl_kmem_cache_sem);
 
+	if ((skc->skc_flags & KMC_LINUXSLAB) != 0) {
+#undef kmem_cache_destroy /* I need the real Linux slab allocator */
+		kmem_cache_destroy(skc->skc_linux_cache);
+		goto finish;
+	}
+
 	/* Cancel any and wait for any pending delayed tasks */
 	VERIFY(!test_and_set_bit(KMC_BIT_DESTROY, &skc->skc_flags));
 
@@ -1701,6 +1734,8 @@ spl_kmem_cache_destroy(spl_kmem_cache_t *skc)
 
 	spl_magazine_destroy(skc);
 	spl_slab_reclaim(skc, 0, 1);
+
+finish:
 	spin_lock(&skc->skc_lock);
 
 	/* Validate there are no objects in use and free all the
@@ -1815,6 +1850,7 @@ spl_cache_grow(spl_kmem_cache_t *skc, int flags, void **obj)
 	SENTRY;
 
 	ASSERT(skc->skc_magic == SKC_MAGIC);
+	ASSERT((skc->skc_flags & KMC_LINUXSLAB) == 0);
 	might_sleep();
 	*obj = NULL;
 
@@ -2017,6 +2053,14 @@ spl_kmem_cache_alloc(spl_kmem_cache_t *skc, int flags)
 	ASSERT(!test_bit(KMC_BIT_DESTROY, &skc->skc_flags));
 	ASSERT(flags & KM_SLEEP);
 	atomic_inc(&skc->skc_ref);
+	if ((skc->skc_flags & KMC_LINUXSLAB) != 0) {
+#undef kmem_cache_alloc
+		obj = kmem_cache_alloc(skc->skc_linux_cache, flags);
+		if (obj && skc->skc_ctor)
+			skc->skc_ctor(obj, skc->skc_private, flags);
+		goto finished;
+	}
+
 	local_irq_disable();
 
 restart:
@@ -2043,6 +2087,7 @@ restart:
 	ASSERT(obj);
 	ASSERT(IS_P2ALIGNED(obj, skc->skc_obj_align));
 
+finished:
 	/* Pre-emptively migrate object to CPU L1 cache */
 	prefetchw(obj);
 	atomic_dec(&skc->skc_ref);
@@ -2067,6 +2112,14 @@ spl_kmem_cache_free(spl_kmem_cache_t *skc, void *obj)
 	ASSERT(skc->skc_magic == SKC_MAGIC);
 	ASSERT(!test_bit(KMC_BIT_DESTROY, &skc->skc_flags));
 	atomic_inc(&skc->skc_ref);
+
+	if ((skc->skc_flags & KMC_LINUXSLAB) != 0) {
+#undef kmem_cache_free
+		if (skc->skc_dtor)
+			skc->skc_dtor(obj, skc->skc_private);
+		kmem_cache_free(skc->skc_linux_cache, obj);
+		goto out;
+	}
 
 	/*
 	 * Only virtual slabs may have emergency objects and these objects
@@ -2165,6 +2218,12 @@ spl_kmem_cache_reap_now(spl_kmem_cache_t *skc, int count)
 
 	ASSERT(skc->skc_magic == SKC_MAGIC);
 	ASSERT(!test_bit(KMC_BIT_DESTROY, &skc->skc_flags));
+
+	/* Don't process kernel slabs */
+	if (test_bit(KMC_BIT_LINUXSLAB, &skc->skc_flags)) {
+		SEXIT;
+		return;
+	}
 
 	/* Prevent concurrent cache reaping when contended */
 	if (test_and_set_bit(KMC_BIT_REAPING, &skc->skc_flags)) {

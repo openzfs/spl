@@ -513,8 +513,6 @@ SPL_PROC_HANDLER(proc_dohostid)
                 if (str == end)
                         SRETURN(-EINVAL);
 
-                (void) snprintf(hw_serial, HW_HOSTID_LEN, "%lu", spl_hostid);
-                hw_serial[HW_HOSTID_LEN - 1] = '\0';
                 *ppos += *lenp;
         } else {
                 len = snprintf(str, sizeof(str), "%lx", spl_hostid);

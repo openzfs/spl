@@ -566,6 +566,9 @@ zone_get_hostid(void *zone)
 		    (rc = hostid_read()) && (rc = hostid_exec()))
 			return HW_INVALID_HOSTID;
 
+                (void) snprintf(hw_serial, HW_HOSTID_LEN, "%lu", spl_hostid);
+                hw_serial[HW_HOSTID_LEN - 1] = '\0';
+
 		printk(KERN_NOTICE "SPL: using hostid 0x%08x\n",
 			(unsigned int) spl_hostid);
 	}

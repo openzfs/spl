@@ -53,6 +53,7 @@
 #define TQ_NOALLOC		0x02000000
 #define TQ_NEW			0x04000000
 #define TQ_FRONT		0x08000000
+#define	TQ_PUSHPAGE_THREAD	0x10000000
 #define TQ_ACTIVE		0x80000000
 
 typedef unsigned long taskqid_t;
@@ -95,6 +96,7 @@ typedef struct taskq_ent {
 
 #define TQENT_FLAG_PREALLOC     0x1
 #define TQENT_FLAG_CANCEL       0x2
+#define	TQENT_FLAG_PUSHPAGE	0x4	/* Thread must use KM_PUSHPAGE */
 
 typedef struct taskq_thread {
 	struct list_head	tqt_thread_list;

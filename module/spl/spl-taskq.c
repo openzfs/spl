@@ -548,6 +548,9 @@ taskq_dispatch(taskq_t *tq, task_func_t func, void *arg, uint_t flags)
 	t->tqent_timer.function = NULL;
 	t->tqent_timer.expires = 0;
 
+	if (flags & TQ_PUSHPAGE_THREAD)
+		t->tqent_flags |= TQENT_FLAG_PUSHPAGE;
+
 	ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
 
 	spin_unlock(&t->tqent_lock);
@@ -593,6 +596,9 @@ taskq_dispatch_delay(taskq_t *tq, task_func_t func, void *arg,
 	t->tqent_timer.function = task_expire;
 	t->tqent_timer.expires = (unsigned long)expire_time;
 	add_timer(&t->tqent_timer);
+
+	if (flags & TQ_PUSHPAGE_THREAD)
+		t->tqent_flags |= TQENT_FLAG_PUSHPAGE;
 
 	ASSERT(!(t->tqent_flags & TQENT_FLAG_PREALLOC));
 
@@ -640,6 +646,9 @@ taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
 	t->tqent_func = func;
 	t->tqent_arg = arg;
 	t->tqent_taskq = tq;
+
+	if (flags & TQ_PUSHPAGE_THREAD)
+		t->tqent_flags |= TQENT_FLAG_PUSHPAGE;
 
 	spin_unlock(&t->tqent_lock);
 
@@ -734,6 +743,15 @@ taskq_thread(void *args)
 			 * tqent_flags _may_ change within the call. */
 			tqt->tqt_flags = t->tqent_flags;
 
+			/*
+			 * Annotate this thread with a flag that indicates it
+			 * is unsafe to use KM_SLEEP for memory allocations
+			 * due to the potential for a deadlock.  KM_PUSHPAGE
+			 * should be used instead.
+			 */
+			if (tqt->tqt_flags & TQENT_FLAG_PUSHPAGE)
+				current->flags |= PF_NOFS;
+
 			taskq_insert_in_order(tq, tqt);
 			tq->tq_nactive++;
 			spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
@@ -745,6 +763,9 @@ taskq_thread(void *args)
 			tq->tq_nactive--;
 			list_del_init(&tqt->tqt_active_list);
 			tqt->tqt_task = NULL;
+
+			if (tqt->tqt_flags & TQENT_FLAG_PUSHPAGE)
+				current->flags &= ~PF_NOFS;
 
 			/* For prealloc'd tasks, we don't free anything. */
 			if ((tq->tq_flags & TASKQ_DYNAMIC) ||

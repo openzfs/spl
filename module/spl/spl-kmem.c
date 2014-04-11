@@ -41,7 +41,7 @@
  * memory pressure on the system.  By default both methods are disabled, but
  * may be enabled by setting KMC_EXPIRE_AGE or KMC_EXPIRE_MEM.
  */
-unsigned int spl_kmem_cache_expire = 0;
+unsigned int spl_kmem_cache_expire = 2;
 EXPORT_SYMBOL(spl_kmem_cache_expire);
 module_param(spl_kmem_cache_expire, uint, 0644);
 MODULE_PARM_DESC(spl_kmem_cache_expire, "By age (0x1) or low memory (0x2)");

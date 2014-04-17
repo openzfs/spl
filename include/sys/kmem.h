@@ -197,12 +197,13 @@ enum {
 	KMC_BIT_OFFSLAB		= 8,	/* Objects not on slab */
 	KMC_BIT_NOEMERGENCY	= 9,	/* Disable emergency objects */
 	KMC_BIT_DEADLOCKED      = 14,	/* Deadlock detected */
-	KMC_BIT_GROWING         = 15,   /* Growing in progress */
-	KMC_BIT_REAPING		= 16,	/* Reaping in progress */
-	KMC_BIT_DESTROY		= 17,	/* Destroy in progress */
-	KMC_BIT_TOTAL		= 18,	/* Proc handler helper bit */
-	KMC_BIT_ALLOC		= 19,	/* Proc handler helper bit */
-	KMC_BIT_MAX		= 20,	/* Proc handler helper bit */
+	KMC_BIT_GROWING         = 15,   /* Growing in progress for KM_SLEEP */
+	KMC_BIT_GROWING_HIGH	= 16,	/* Growing in progress */
+	KMC_BIT_REAPING		= 17,	/* Reaping in progress */
+	KMC_BIT_DESTROY		= 18,	/* Destroy in progress */
+	KMC_BIT_TOTAL		= 19,	/* Proc handler helper bit */
+	KMC_BIT_ALLOC		= 20,	/* Proc handler helper bit */
+	KMC_BIT_MAX		= 21,	/* Proc handler helper bit */
 };
 
 /* kmem move callback return values */
@@ -226,6 +227,7 @@ typedef enum kmem_cbrc {
 #define KMC_NOEMERGENCY		(1 << KMC_BIT_NOEMERGENCY)
 #define KMC_DEADLOCKED		(1 << KMC_BIT_DEADLOCKED)
 #define KMC_GROWING		(1 << KMC_BIT_GROWING)
+#define KMC_GROWING_HIGH	(1 << KMC_BIT_GROWING_HIGH)
 #define KMC_REAPING		(1 << KMC_BIT_REAPING)
 #define KMC_DESTROY		(1 << KMC_BIT_DESTROY)
 #define KMC_TOTAL		(1 << KMC_BIT_TOTAL)

@@ -128,6 +128,108 @@ kmem_debugging(void)
 }
 EXPORT_SYMBOL(kmem_debugging);
 
+/*
+ * General purpose unified implementation of kmem_alloc(). It is an
+ * amalgamation of Linux and Illumos allocator design. It should never be
+ * exported to ensure that code using kmem_alloc()/kmem_zalloc() remains
+ * relatively portable. SPL consumers should only access it through wrappers
+ * that sanity check the flags for portability issues such as KM_ZERO being
+ * passed by consumers. This is static inline to ensure that it never appears
+ * in a backtrace.
+ */
+static inline void *
+spl_kmem_alloc_node(size_t size, int flags, int node)
+{
+	int	retries = 0;
+	gfp_t	lflags = kmem_flags_convert(flags);
+	void	*ptr;
+
+	/*
+	 * Log abnormal allocations before attempting them so that we do not
+	 * flood dmesg with warnings about the same allocation.
+	 */
+	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE)) {
+		if (unlikely((size > KMALLOC_MAX_SIZE))) {
+			SDEBUG(SD_CONSOLE | SD_WARNING | SD_ERROR,
+				"kmem_alloc() called for enormous allocation"
+				" of %lu bytes (mode:0x%x)\n"
+				"Please file an issue report at:\n"
+				"https://github.com/zfsonlinux/spl/issues/new",
+				size, flags);
+			if ((flags & (KM_PUSHPAGE | KM_NOSLEEP))) {
+				SDEBUG(SD_CONSOLE | SD_WARNING | SD_ERROR,
+				"This allocation could deadlock"
+				"under low memory conditions");
+			}
+			spl_debug_dumpstack(NULL);
+
+		} else {
+			SDEBUG(SD_CONSOLE | SD_WARNING | SD_ERROR,
+				"kmem_alloc() called for large allocation"
+				" of %lu bytes (mode:0x%x)",
+				size, flags);
+			spl_debug_dumpstack(NULL);
+		}
+	}
+
+	/*
+	 * Use a loop because kmalloc_node() can fail when GFP_KERNEL is used
+	 * unlike kmem_alloc() with KM_SLEEP on Illumos.
+	 */
+	do {
+		/*
+		 * Calling kmalloc_node() when size > KMALLOC_MAX_SIZE is
+		 * unsafe. Send call to __vmalloc() and hope for the best.
+		 * A scary warning has already been printed to dmesg.
+		 */
+		if (unlikely(size > KMALLOC_MAX_SIZE)) {
+			ptr = __vmalloc(size, lflags, PAGE_KERNEL);
+		} else {
+			ptr = kmalloc_node(size, lflags, node);
+		}
+
+		if (likely(ptr) || ((flags & KM_NOSLEEP)))
+			return (ptr);
+
+		if (!(++retries % 10)) {
+			SDEBUG(SD_CONSOLE | SD_WARNING,
+				"possible memory allocation deadlock (mode:0x%x)",
+				lflags);
+			spl_debug_dumpstack(NULL);
+		}
+
+		/* Use cond_resched() instead of congestion_wait() to avoid
+		 * deadlocking systems where there are no block devices. */
+		cond_resched();
+	} while (1);
+}
+
+void *
+spl_kmem_alloc(size_t size, int flags)
+{
+	ASSERT0(flags & ~KM_PUBLIC_MASK);
+	return spl_kmem_alloc_node(size, flags, NUMA_NO_NODE);
+}
+EXPORT_SYMBOL(spl_kmem_alloc);
+
+void *
+spl_kmem_zalloc(size_t size, int flags)
+{
+	ASSERT0(flags & ~KM_PUBLIC_MASK);
+	return spl_kmem_alloc_node(size, flags | KM_ZERO, NUMA_NO_NODE);
+}
+EXPORT_SYMBOL(spl_kmem_zalloc);
+
+void
+spl_kmem_free(const void *buf, size_t size)
+{
+	if (is_vmalloc_addr(buf))
+		vfree(buf);
+	else
+		kfree(buf);
+}
+EXPORT_SYMBOL(spl_kmem_free);
+
 char *
 kmem_vasprintf(const char *fmt, va_list ap)
 {
@@ -167,7 +269,7 @@ __strdup(const char *str, int flags)
 	int n;
 
 	n = strlen(str);
-	ptr = kmalloc_nofail(n + 1, flags);
+	ptr = kmalloc(n + 1, kmem_flags_convert(flags));
 	if (ptr)
 		memcpy(ptr, str, n + 1);
 
@@ -200,19 +302,13 @@ EXPORT_SYMBOL(strfree);
 # ifdef HAVE_ATOMIC64_T
 atomic64_t kmem_alloc_used = ATOMIC64_INIT(0);
 unsigned long long kmem_alloc_max = 0;
-atomic64_t vmem_alloc_used = ATOMIC64_INIT(0);
-unsigned long long vmem_alloc_max = 0;
 # else  /* HAVE_ATOMIC64_T */
 atomic_t kmem_alloc_used = ATOMIC_INIT(0);
 unsigned long long kmem_alloc_max = 0;
-atomic_t vmem_alloc_used = ATOMIC_INIT(0);
-unsigned long long vmem_alloc_max = 0;
 # endif /* HAVE_ATOMIC64_T */
 
 EXPORT_SYMBOL(kmem_alloc_used);
 EXPORT_SYMBOL(kmem_alloc_max);
-EXPORT_SYMBOL(vmem_alloc_used);
-EXPORT_SYMBOL(vmem_alloc_max);
 
 /* When DEBUG_KMEM_TRACKING is enabled not only will total bytes be tracked
  * but also the location of every alloc and free.  When the SPL module is
@@ -246,17 +342,9 @@ spinlock_t kmem_lock;
 struct hlist_head kmem_table[KMEM_TABLE_SIZE];
 struct list_head kmem_list;
 
-spinlock_t vmem_lock;
-struct hlist_head vmem_table[VMEM_TABLE_SIZE];
-struct list_head vmem_list;
-
 EXPORT_SYMBOL(kmem_lock);
 EXPORT_SYMBOL(kmem_table);
 EXPORT_SYMBOL(kmem_list);
-
-EXPORT_SYMBOL(vmem_lock);
-EXPORT_SYMBOL(vmem_table);
-EXPORT_SYMBOL(vmem_list);
 
 static kmem_debug_t *
 kmem_del_init(spinlock_t *lock, struct hlist_head *table, int bits, const void *addr)
@@ -287,7 +375,7 @@ kmem_del_init(spinlock_t *lock, struct hlist_head *table, int bits, const void *
 
 void *
 kmem_alloc_track(size_t size, int flags, const char *func, int line,
-    int node_alloc, int node)
+    int node)
 {
 	void *ptr = NULL;
 	kmem_debug_t *dptr;
@@ -295,8 +383,7 @@ kmem_alloc_track(size_t size, int flags, const char *func, int line,
 	SENTRY;
 
 	/* Function may be called with KM_NOSLEEP so failure is possible */
-	dptr = (kmem_debug_t *) kmalloc_nofail(sizeof(kmem_debug_t),
-	    flags & ~__GFP_ZERO);
+	dptr = (kmem_debug_t *) kmem_alloc(sizeof(kmem_debug_t), flags);
 
 	if (unlikely(dptr == NULL)) {
 		SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING, "debug "
@@ -305,24 +392,12 @@ kmem_alloc_track(size_t size, int flags, const char *func, int line,
 		    kmem_alloc_used_read(), kmem_alloc_max);
 	} else {
 		/*
-		 * Marked unlikely because we should never be doing this,
-		 * we tolerate to up 2 pages but a single page is best.
-		 */
-		if (unlikely((size > PAGE_SIZE*2) && !(flags & KM_NODEBUG))) {
-			SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING, "large "
-			    "kmem_alloc(%llu, 0x%x) at %s:%d (%lld/%llu)\n",
-			    (unsigned long long) size, flags, func, line,
-			    kmem_alloc_used_read(), kmem_alloc_max);
-			spl_debug_dumpstack(NULL);
-		}
-
-		/*
 		 *  We use __strdup() below because the string pointed to by
 		 * __FUNCTION__ might not be available by the time we want
 		 * to print it since the module might have been unloaded.
 		 * This can only fail in the KM_NOSLEEP case.
 		 */
-		dptr->kd_func = __strdup(func, flags & ~__GFP_ZERO);
+		dptr->kd_func = __strdup(func, flags);
 		if (unlikely(dptr->kd_func == NULL)) {
 			kfree(dptr);
 			SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING,
@@ -331,15 +406,7 @@ kmem_alloc_track(size_t size, int flags, const char *func, int line,
 			goto out;
 		}
 
-		/* Use the correct allocator */
-		if (node_alloc) {
-			ASSERT(!(flags & __GFP_ZERO));
-			ptr = kmalloc_node_nofail(size, flags, node);
-		} else if (flags & __GFP_ZERO) {
-			ptr = kzalloc_nofail(size, flags & ~__GFP_ZERO);
-		} else {
-			ptr = kmalloc_nofail(size, flags);
-		}
+		ptr = spl_kmem_alloc_node(size, flags, node);
 
 		if (unlikely(ptr == NULL)) {
 			kfree(dptr->kd_func);
@@ -408,157 +475,22 @@ kmem_free_track(const void *ptr, size_t size)
 	kfree(dptr);
 
 	memset((void *)ptr, 0x5a, size);
-	kfree(ptr);
+	spl_kmem_free(ptr, size);
 
 	SEXIT;
 }
 EXPORT_SYMBOL(kmem_free_track);
 
-void *
-vmem_alloc_track(size_t size, int flags, const char *func, int line)
-{
-	void *ptr = NULL;
-	kmem_debug_t *dptr;
-	unsigned long irq_flags;
-	SENTRY;
-
-	ASSERT(flags & KM_SLEEP);
-
-	/* Function may be called with KM_NOSLEEP so failure is possible */
-	dptr = (kmem_debug_t *) kmalloc_nofail(sizeof(kmem_debug_t),
-	    flags & ~__GFP_ZERO);
-	if (unlikely(dptr == NULL)) {
-		SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING, "debug "
-		    "vmem_alloc(%ld, 0x%x) at %s:%d failed (%lld/%llu)\n",
-		    sizeof(kmem_debug_t), flags, func, line,
-		    vmem_alloc_used_read(), vmem_alloc_max);
-	} else {
-		/*
-		 * We use __strdup() below because the string pointed to by
-		 * __FUNCTION__ might not be available by the time we want
-		 * to print it, since the module might have been unloaded.
-		 * This can never fail because we have already asserted
-		 * that flags is KM_SLEEP.
-		 */
-		dptr->kd_func = __strdup(func, flags & ~__GFP_ZERO);
-		if (unlikely(dptr->kd_func == NULL)) {
-			kfree(dptr);
-			SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING,
-			    "debug __strdup() at %s:%d failed (%lld/%llu)\n",
-			    func, line, vmem_alloc_used_read(), vmem_alloc_max);
-			goto out;
-		}
-
-		/* Use the correct allocator */
-		if (flags & __GFP_ZERO) {
-			ptr = vzalloc_nofail(size, flags & ~__GFP_ZERO);
-		} else {
-			ptr = vmalloc_nofail(size, flags);
-		}
-
-		if (unlikely(ptr == NULL)) {
-			kfree(dptr->kd_func);
-			kfree(dptr);
-			SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING, "vmem_alloc"
-			    "(%llu, 0x%x) at %s:%d failed (%lld/%llu)\n",
-			    (unsigned long long) size, flags, func, line,
-			    vmem_alloc_used_read(), vmem_alloc_max);
-			goto out;
-		}
-
-		vmem_alloc_used_add(size);
-		if (unlikely(vmem_alloc_used_read() > vmem_alloc_max))
-			vmem_alloc_max = vmem_alloc_used_read();
-
-		INIT_HLIST_NODE(&dptr->kd_hlist);
-		INIT_LIST_HEAD(&dptr->kd_list);
-
-		dptr->kd_addr = ptr;
-		dptr->kd_size = size;
-		dptr->kd_line = line;
-
-		spin_lock_irqsave(&vmem_lock, irq_flags);
-		hlist_add_head(&dptr->kd_hlist,
-		    &vmem_table[hash_ptr(ptr, VMEM_HASH_BITS)]);
-		list_add_tail(&dptr->kd_list, &vmem_list);
-		spin_unlock_irqrestore(&vmem_lock, irq_flags);
-
-		SDEBUG_LIMIT(SD_INFO,
-		    "vmem_alloc(%llu, 0x%x) at %s:%d = %p (%lld/%llu)\n",
-		    (unsigned long long) size, flags, func, line,
-		    ptr, vmem_alloc_used_read(), vmem_alloc_max);
-	}
-out:
-	SRETURN(ptr);
-}
-EXPORT_SYMBOL(vmem_alloc_track);
-
-void
-vmem_free_track(const void *ptr, size_t size)
-{
-	kmem_debug_t *dptr;
-	SENTRY;
-
-	ASSERTF(ptr || size > 0, "ptr: %p, size: %llu", ptr,
-	    (unsigned long long) size);
-
-	dptr = kmem_del_init(&vmem_lock, vmem_table, VMEM_HASH_BITS, ptr);
-
-	/* Must exist in hash due to vmem_alloc() */
-	ASSERT(dptr);
-
-	/* Size must match */
-	ASSERTF(dptr->kd_size == size, "kd_size (%llu) != size (%llu), "
-	    "kd_func = %s, kd_line = %d\n", (unsigned long long) dptr->kd_size,
-	    (unsigned long long) size, dptr->kd_func, dptr->kd_line);
-
-	vmem_alloc_used_sub(size);
-	SDEBUG_LIMIT(SD_INFO, "vmem_free(%p, %llu) (%lld/%llu)\n", ptr,
-	    (unsigned long long) size, vmem_alloc_used_read(),
-	    vmem_alloc_max);
-
-	kfree(dptr->kd_func);
-
-	memset((void *)dptr, 0x5a, sizeof(kmem_debug_t));
-	kfree(dptr);
-
-	memset((void *)ptr, 0x5a, size);
-	vfree(ptr);
-
-	SEXIT;
-}
-EXPORT_SYMBOL(vmem_free_track);
-
 # else /* DEBUG_KMEM_TRACKING */
 
 void *
 kmem_alloc_debug(size_t size, int flags, const char *func, int line,
-    int node_alloc, int node)
+    int node)
 {
 	void *ptr;
 	SENTRY;
 
-	/*
-	 * Marked unlikely because we should never be doing this,
-	 * we tolerate to up 2 pages but a single page is best.
-	 */
-	if (unlikely((size > PAGE_SIZE * 2) && !(flags & KM_NODEBUG))) {
-		SDEBUG(SD_CONSOLE | SD_WARNING,
-		    "large kmem_alloc(%llu, 0x%x) at %s:%d (%lld/%llu)\n",
-		    (unsigned long long) size, flags, func, line,
-		    kmem_alloc_used_read(), kmem_alloc_max);
-		spl_debug_dumpstack(NULL);
-	}
-
-	/* Use the correct allocator */
-	if (node_alloc) {
-		ASSERT(!(flags & __GFP_ZERO));
-		ptr = kmalloc_node_nofail(size, flags, node);
-	} else if (flags & __GFP_ZERO) {
-		ptr = kzalloc_nofail(size, flags & (~__GFP_ZERO));
-	} else {
-		ptr = kmalloc_nofail(size, flags);
-	}
+	ptr = spl_kmem_alloc_node(size, flags, node);
 
 	if (unlikely(ptr == NULL)) {
 		SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING,
@@ -592,63 +524,11 @@ kmem_free_debug(const void *ptr, size_t size)
 	SDEBUG_LIMIT(SD_INFO, "kmem_free(%p, %llu) (%lld/%llu)\n", ptr,
 	    (unsigned long long) size, kmem_alloc_used_read(),
 	    kmem_alloc_max);
-	kfree(ptr);
+	spl_kmem_free(ptr, size);
 
 	SEXIT;
 }
 EXPORT_SYMBOL(kmem_free_debug);
-
-void *
-vmem_alloc_debug(size_t size, int flags, const char *func, int line)
-{
-	void *ptr;
-	SENTRY;
-
-	ASSERT(flags & KM_SLEEP);
-
-	/* Use the correct allocator */
-	if (flags & __GFP_ZERO) {
-		ptr = vzalloc_nofail(size, flags & (~__GFP_ZERO));
-	} else {
-		ptr = vmalloc_nofail(size, flags);
-	}
-
-	if (unlikely(ptr == NULL)) {
-		SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING,
-		    "vmem_alloc(%llu, 0x%x) at %s:%d failed (%lld/%llu)\n",
-		    (unsigned long long) size, flags, func, line,
-		    vmem_alloc_used_read(), vmem_alloc_max);
-	} else {
-		vmem_alloc_used_add(size);
-		if (unlikely(vmem_alloc_used_read() > vmem_alloc_max))
-			vmem_alloc_max = vmem_alloc_used_read();
-
-		SDEBUG_LIMIT(SD_INFO, "vmem_alloc(%llu, 0x%x) = %p "
-		    "(%lld/%llu)\n", (unsigned long long) size, flags, ptr,
-		    vmem_alloc_used_read(), vmem_alloc_max);
-	}
-
-	SRETURN(ptr);
-}
-EXPORT_SYMBOL(vmem_alloc_debug);
-
-void
-vmem_free_debug(const void *ptr, size_t size)
-{
-	SENTRY;
-
-	ASSERTF(ptr || size > 0, "ptr: %p, size: %llu", ptr,
-	    (unsigned long long) size);
-
-	vmem_alloc_used_sub(size);
-	SDEBUG_LIMIT(SD_INFO, "vmem_free(%p, %llu) (%lld/%llu)\n", ptr,
-	    (unsigned long long) size, vmem_alloc_used_read(),
-	    vmem_alloc_max);
-	vfree(ptr);
-
-	SEXIT;
-}
-EXPORT_SYMBOL(vmem_free_debug);
 
 # endif /* DEBUG_KMEM_TRACKING */
 #endif /* DEBUG_KMEM */
@@ -711,15 +591,16 @@ SPL_SHRINKER_DECLARE(spl_kmem_cache_shrinker,
 static void *
 kv_alloc(spl_kmem_cache_t *skc, int size, int flags)
 {
-	void *ptr;
+	gfp_t	lflags = kmem_flags_convert(flags);
+	void	*ptr;
 
 	ASSERT(ISP2(size));
 
 	if (skc->skc_flags & KMC_KMEM)
-		ptr = (void *)__get_free_pages(flags | __GFP_COMP,
+		ptr = (void *)__get_free_pages(lflags | __GFP_COMP,
 		    get_order(size));
 	else
-		ptr = __vmalloc(size, flags | __GFP_HIGHMEM, PAGE_KERNEL);
+		ptr = __vmalloc(size, lflags | __GFP_HIGHMEM, PAGE_KERNEL);
 
 	/* Resulting allocated memory will be page aligned */
 	ASSERT(IS_P2ALIGNED(ptr, PAGE_SIZE));
@@ -1046,11 +927,11 @@ spl_emergency_alloc(spl_kmem_cache_t *skc, int flags, void **obj)
 	if (!empty)
 		SRETURN(-EEXIST);
 
-	ske = kmalloc(sizeof(*ske), flags);
+	ske = kmalloc(sizeof(*ske), kmem_flags_convert(flags));
 	if (ske == NULL)
 		SRETURN(-ENOMEM);
 
-	ske->ske_obj = kmalloc(skc->skc_obj_size, flags);
+	ske->ske_obj = kmalloc(skc->skc_obj_size, kmem_flags_convert(flags));
 	if (ske->ske_obj == NULL) {
 		kfree(ske);
 		SRETURN(-ENOMEM);
@@ -1296,7 +1177,7 @@ spl_magazine_alloc(spl_kmem_cache_t *skc, int cpu)
 	           sizeof(void *) * skc->skc_mag_size;
 	SENTRY;
 
-	skm = kmem_alloc_node(size, KM_SLEEP, cpu_to_node(cpu));
+	skm = spl_kmem_alloc_node(size, KM_SLEEP, cpu_to_node(cpu));
 	if (skm) {
 		skm->skm_magic = SKM_MAGIC;
 		skm->skm_avail = 0;
@@ -1666,7 +1547,13 @@ spl_cache_grow_work(void *data)
 	spl_kmem_cache_t *skc = ska->ska_cache;
 	spl_kmem_slab_t *sks;
 
-	sks = spl_slab_alloc(skc, ska->ska_flags | __GFP_NORETRY | KM_NODEBUG);
+#if defined(memalloc_noio_save) && defined(memalloc_noio_restore)
+	unsigned noio_flag = memalloc_noio_save();
+	sks = spl_slab_alloc(skc, ska->ska_flags | KM_NOSLEEP);
+	memalloc_noio_restore(noio_flag);
+#else
+	sks = spl_slab_alloc(skc, ska->ska_flags | KM_NOSLEEP);
+#endif
 	spin_lock(&skc->skc_lock);
 	if (sks) {
 		skc->skc_slab_total++;
@@ -1700,9 +1587,11 @@ spl_cache_grow_wait(spl_kmem_cache_t *skc)
 static int
 spl_cache_grow(spl_kmem_cache_t *skc, int flags, void **obj)
 {
-	int remaining, rc;
+	int remaining, rc = 0;
 	SENTRY;
 
+	/* KM_ZERO is an internal flag for kmem_zalloc(). It is not allowed in slabs. */
+	ASSERT((flags & KM_ZERO) == 0);
 	ASSERT(skc->skc_magic == SKC_MAGIC);
 	ASSERT((skc->skc_flags & KMC_SLAB) == 0);
 	might_sleep();
@@ -1903,9 +1792,9 @@ spl_kmem_cache_alloc(spl_kmem_cache_t *skc, int flags)
 	void *obj = NULL;
 	SENTRY;
 
+	ASSERT0(flags & ~KM_PUBLIC_MASK);
 	ASSERT(skc->skc_magic == SKC_MAGIC);
 	ASSERT(!test_bit(KMC_BIT_DESTROY, &skc->skc_flags));
-	ASSERT(flags & KM_SLEEP);
 
 	atomic_inc(&skc->skc_ref);
 
@@ -1916,9 +1805,10 @@ spl_kmem_cache_alloc(spl_kmem_cache_t *skc, int flags)
 	 */
 	if (skc->skc_flags & KMC_SLAB) {
 		struct kmem_cache *slc = skc->skc_linux_cache;
+		gfp_t lflags = kmem_flags_convert(flags) | __GFP_COMP;
 
 		do {
-			obj = kmem_cache_alloc(slc, flags | __GFP_COMP);
+			obj = kmem_cache_alloc(slc, lflags);
 		} while ((obj == NULL) && !(flags & KM_NOSLEEP));
 
 		goto ret;
@@ -2294,10 +2184,8 @@ spl_kmem_init(void)
 
 #ifdef DEBUG_KMEM
 	kmem_alloc_used_set(0);
-	vmem_alloc_used_set(0);
 
 	spl_kmem_init_tracking(&kmem_list, &kmem_lock, KMEM_TABLE_SIZE);
-	spl_kmem_init_tracking(&vmem_list, &vmem_lock, VMEM_TABLE_SIZE);
 #endif
 
 	init_rwsem(&spl_kmem_cache_sem);
@@ -2328,14 +2216,7 @@ spl_kmem_fini(void)
 		    "kmem leaked %ld/%ld bytes\n",
 		    kmem_alloc_used_read(), kmem_alloc_max);
 
-
-	if (vmem_alloc_used_read() != 0)
-		SDEBUG_LIMIT(SD_CONSOLE | SD_WARNING,
-		    "vmem leaked %ld/%ld bytes\n",
-		    vmem_alloc_used_read(), vmem_alloc_max);
-
 	spl_kmem_fini_tracking(&kmem_list, &kmem_lock);
-	spl_kmem_fini_tracking(&vmem_list, &vmem_lock);
 #endif /* DEBUG_KMEM */
 
 	SEXIT;

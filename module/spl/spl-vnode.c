@@ -417,9 +417,12 @@ vn_rename(const char *oldname, const char *newname, int x1)
 #ifdef HAVE_4ARGS_VFS_RENAME
 	rc = vfs_rename(old_dir->d_inode, old_dentry,
 	    new_dir->d_inode, new_dentry);
-#else
+#elif defined(HAVE_5ARGS_VFS_RENAME)
 	rc = vfs_rename(old_dir->d_inode, old_dentry,
 	    new_dir->d_inode, new_dentry, NULL);
+#else
+	rc = vfs_rename(old_dir->d_inode, old_dentry,
+	    new_dir->d_inode, new_dentry, NULL, 0);
 #endif /* HAVE_4ARGS_VFS_RENAME */
 exit4:
 	unlock_rename(new_dir, old_dir);
@@ -577,9 +580,12 @@ vn_rename(const char *oldname, const char *newname, int x1)
 #ifdef HAVE_4ARGS_VFS_RENAME
 	rc = vfs_rename(old_dir->d_inode, old_dentry,
 	    new_dir->d_inode, new_dentry);
-#else
+#elif defined(HAVE_5ARGS_VFS_RENAME)
 	rc = vfs_rename(old_dir->d_inode, old_dentry,
 	    new_dir->d_inode, new_dentry, NULL);
+#else
+	rc = vfs_rename(old_dir->d_inode, old_dentry,
+	    new_dir->d_inode, new_dentry, NULL, 0);
 #endif /* HAVE_4ARGS_VFS_RENAME */
 exit5:
         dput(new_dentry);

@@ -348,7 +348,8 @@ enum {
 	KMC_BIT_DESTROY		= 17,	/* Destroy in progress */
 	KMC_BIT_TOTAL		= 18,	/* Proc handler helper bit */
 	KMC_BIT_ALLOC		= 19,	/* Proc handler helper bit */
-	KMC_BIT_MAX		= 20,	/* Proc handler helper bit */
+	KMC_BIT_LINUXSLAB	= 20,	/* Use Linux kernel slabs */
+	KMC_BIT_MAX		= 21,	/* Proc handler helper bit */
 };
 
 /* kmem move callback return values */
@@ -375,6 +376,7 @@ typedef enum kmem_cbrc {
 #define KMC_DESTROY		(1 << KMC_BIT_DESTROY)
 #define KMC_TOTAL		(1 << KMC_BIT_TOTAL)
 #define KMC_ALLOC		(1 << KMC_BIT_ALLOC)
+#define KMC_LINUXSLAB		(1 << KMC_BIT_LINUXSLAB)
 #define KMC_MAX			(1 << KMC_BIT_MAX)
 
 #define KMC_REAP_CHUNK		INT_MAX
@@ -483,6 +485,7 @@ typedef struct spl_kmem_cache {
 	uint64_t		skc_obj_deadlock;  /* Obj emergency deadlocks */
 	uint64_t		skc_obj_emergency; /* Obj emergency current */
 	uint64_t		skc_obj_emergency_max; /* Obj emergency max */
+	struct kmem_cache	*skc_linux_cache;	/* Linux slab cache if used */
 } spl_kmem_cache_t;
 #define kmem_cache_t		spl_kmem_cache_t
 

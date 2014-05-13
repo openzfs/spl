@@ -1418,14 +1418,7 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 
 	might_sleep();
 
-	/*
-	 * Allocate memory for a new cache an initialize it.  Unfortunately,
-	 * this usually ends up being a large allocation of ~32k because
-	 * we need to allocate enough memory for the worst case number of
-	 * cpus in the magazine, skc_mag[NR_CPUS].  Because of this we
-	 * explicitly pass KM_NODEBUG to suppress the kmem warning
-	 */
-	skc = kmem_zalloc(sizeof(*skc), KM_SLEEP| KM_NODEBUG);
+	skc = kzalloc(sizeof(*skc), GFP_KERNEL);
 	if (skc == NULL)
 		SRETURN(NULL);
 
@@ -1546,7 +1539,7 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 	SRETURN(skc);
 out:
 	kmem_free(skc->skc_name, skc->skc_name_size);
-	kmem_free(skc, sizeof(*skc));
+	kfree(skc);
 	SRETURN(NULL);
 }
 EXPORT_SYMBOL(spl_kmem_cache_create);
@@ -1616,7 +1609,7 @@ spl_kmem_cache_destroy(spl_kmem_cache_t *skc)
 	kmem_free(skc->skc_name, skc->skc_name_size);
 	spin_unlock(&skc->skc_lock);
 
-	kmem_free(skc, sizeof(*skc));
+	kfree(skc);
 
 	SEXIT;
 }

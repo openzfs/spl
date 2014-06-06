@@ -104,7 +104,7 @@
 
 /* Missing macros
  */
-#define PAGESIZE			PAGE_SIZE
+#define SPL_PAGESIZE			PAGE_SIZE
 
 /* from Solaris sys/byteorder.h */
 #define BSWAP_8(x)	((x) & 0xff)
@@ -191,12 +191,12 @@ extern void spl_cleanup(void);
  * that the result is correctly calculated based on the data type of (x),
  * which is passed in as the last argument, regardless of the data
  * type of the alignment.  For example, if (x) is of type uint64_t,
- * and we want to round it up to a page boundary using "PAGESIZE" as
+ * and we want to round it up to a page boundary using "SPL_PAGESIZE" as
  * the alignment, we can do either
  *
- * P2ROUNDUP(x, (uint64_t)PAGESIZE)
+ * P2ROUNDUP(x, (uint64_t)SPL_PAGESIZE)
  * or
- * P2ROUNDUP_TYPED(x, PAGESIZE, uint64_t)
+ * P2ROUNDUP_TYPED(x, SPL_PAGESIZE, uint64_t)
  */
 #define P2ALIGN_TYPED(x, align, type)   \
         ((type)(x) & -(type)(align))

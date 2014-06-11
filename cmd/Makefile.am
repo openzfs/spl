@@ -6,9 +6,9 @@ DEFAULT_INCLUDES += \
 noinst_PROGRAMS = spl
 sbin_PROGRAMS = splat
 
-spl_SOURCES = spl.c
+spl_SOURCES = $(top_srcdir)/cmd/spl.c
 
-splat_SOURCES = splat.c
+splat_SOURCES = $(top_srcdir)/cmd/splat.c
 splat_LDFLAGS = $(top_builddir)/lib/libcommon.la
 
-EXTRA_DIST = splat.h
+EXTRA_DIST = $(top_srcdir)/cmd/splat.h

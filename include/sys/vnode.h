@@ -103,14 +103,6 @@
 #define CREATE_XATTR_DIR	0x04
 #define ATTR_NOACLCHECK		0x20
 
-#ifdef HAVE_PATH_IN_NAMEIDATA
-# define nd_dentry	path.dentry
-# define nd_mnt		path.mnt
-#else
-# define nd_dentry	dentry
-# define nd_mnt		mnt
-#endif
-
 typedef enum vtype {
 	VNON		= 0,
 	VREG		= 1,

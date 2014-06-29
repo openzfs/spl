@@ -28,7 +28,6 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_TYPE_UINTPTR_T
 	SPL_AC_2ARGS_REGISTER_SYSCTL
 	SPL_AC_SHRINKER_CALLBACK
-	SPL_AC_PATH_IN_NAMEIDATA
 	SPL_AC_TASK_CURR
 	SPL_AC_CTL_UNNUMBERED
 	SPL_AC_CTL_NAME
@@ -985,28 +984,6 @@ AC_DEFUN([SPL_AC_SHRINKER_CALLBACK],[
 		])
 	])
 	EXTRA_KCFLAGS="$tmp_flags"
-])
-
-dnl #
-dnl # 2.6.25 API change,
-dnl # struct path entry added to struct nameidata
-dnl #
-AC_DEFUN([SPL_AC_PATH_IN_NAMEIDATA],
-	[AC_MSG_CHECKING([whether struct path used in struct nameidata])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/namei.h>
-	],[
-		struct nameidata nd __attribute__ ((unused));
-
-		nd.path.mnt = NULL;
-		nd.path.dentry = NULL;
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_PATH_IN_NAMEIDATA, 1,
-		          [struct path used in struct nameidata])
-	],[
-		AC_MSG_RESULT(no)
-	])
 ])
 
 dnl #

@@ -80,6 +80,39 @@ kmem_flags_convert(int flags)
 	return (lflags);
 }
 
+typedef struct {
+	struct task_struct *fstrans_thread;
+	unsigned int saved_flags;
+} fstrans_cookie_t;
+
+static inline fstrans_cookie_t
+spl_fstrans_mark(void)
+{
+	fstrans_cookie_t cookie;
+
+	VERIFY(cookie.fstrans_thread = current);
+
+	cookie.saved_flags = current->flags & PF_FSTRANS;
+	current->flags |= PF_FSTRANS;
+
+	return (cookie);
+}
+
+static inline void
+spl_fstrans_unmark(fstrans_cookie_t cookie)
+{
+	VERIFY(cookie.fstrans_thread == current);
+	VERIFY(current->flags & PF_FSTRANS);
+
+	current->flags &= ~(PF_FSTRANS);
+	current->flags |= cookie.saved_flags;
+}
+
+/*
+ * This is a version of vmalloc() that hooks into PF_FSTRANS.
+ */
+extern void *spl_vmalloc (unsigned long size, gfp_t lflags, pgprot_t prot);
+
 extern void *spl_kmem_alloc(size_t size, int flags);
 extern void *spl_kmem_zalloc(size_t size, int flags);
 extern void spl_kmem_free(const void *buf, size_t size);

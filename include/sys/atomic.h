@@ -253,6 +253,18 @@ atomic_cas_64(volatile uint64_t *target,  uint64_t cmp,
 	return rc;
 }
 
+static __inline__ uint64_t
+atomic_swap_64(volatile uint64_t *target,  uint64_t newval)
+{
+	uint64_t rc;
+
+	spin_lock(&atomic64_lock);
+	rc = *target;
+	*target = newval;
+	spin_unlock(&atomic64_lock);
+
+	return rc;
+}
 
 #else /* ATOMIC_SPINLOCK */
 
@@ -274,6 +286,7 @@ atomic_cas_64(volatile uint64_t *target,  uint64_t cmp,
 #define atomic_add_64_nv(v, i)	atomic64_add_return((i), (atomic64_t *)(v))
 #define atomic_sub_64_nv(v, i)	atomic64_sub_return((i), (atomic64_t *)(v))
 #define atomic_cas_64(v, x, y)	atomic64_cmpxchg((atomic64_t *)(v), x, y)
+#define atomic_swap_64(v, x)	atomic64_xchg((atomic64_t *)(v), x)
 
 #endif /* ATOMIC_SPINLOCK */
 

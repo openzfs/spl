@@ -104,7 +104,8 @@
 
 /* Missing macros
  */
-#define PAGESIZE			PAGE_SIZE
+#undef         PAGESIZE                                                                                                                                                                                            
+#define        PAGESIZE        (sysconf(_SC_PAGESIZE))
 
 /* from Solaris sys/byteorder.h */
 #define BSWAP_8(x)	((x) & 0xff)

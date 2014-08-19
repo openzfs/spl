@@ -12,7 +12,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/linux/module_compat.h \
 	$(top_srcdir)/include/linux/mutex_compat.h \
 	$(top_srcdir)/include/linux/proc_compat.h \
-	$(top_srcdir)/include/linux/rwsem_compat.h \
 	$(top_srcdir)/include/linux/smp_compat.h \
 	$(top_srcdir)/include/linux/sysctl_compat.h \
 	$(top_srcdir)/include/linux/time_compat.h \

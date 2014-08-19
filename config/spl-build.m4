@@ -76,7 +76,6 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_PUT_TASK_STRUCT
 	SPL_AC_5ARGS_PROC_HANDLER
 	SPL_AC_KVASPRINTF
-	SPL_AC_EXPORTED_RWSEM_IS_LOCKED
 	SPL_AC_KERNEL_FALLOCATE
 	SPL_AC_SHRINK_DCACHE_MEMORY
 	SPL_AC_SHRINK_ICACHE_MEMORY
@@ -86,7 +85,6 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_CONFIG_ZLIB_DEFLATE
 	SPL_AC_2ARGS_ZLIB_DEFLATE_WORKSPACESIZE
 	SPL_AC_SHRINK_CONTROL_STRUCT
-	SPL_AC_RWSEM_SPINLOCK_IS_RAW
 	SPL_AC_SCHED_RT_HEADER
 	SPL_AC_2ARGS_VFS_GETATTR
 	SPL_AC_USLEEP_RANGE
@@ -2191,27 +2189,6 @@ AC_DEFUN([SPL_AC_KERNEL_FALLOCATE], [
 ])
 
 dnl #
-dnl # 2.6.33 API change. Also backported in RHEL5 as of 2.6.18-190.el5.
-dnl # Earlier versions of rwsem_is_locked() were inline and had a race
-dnl # condition.  The fixed version is exported as a symbol.  The race
-dnl # condition is fixed by acquiring sem->wait_lock, so we must not
-dnl # call that version while holding sem->wait_lock.
-dnl #
-AC_DEFUN([SPL_AC_EXPORTED_RWSEM_IS_LOCKED],
-	[AC_MSG_CHECKING([whether rwsem_is_locked() acquires sem->wait_lock])
-	SPL_LINUX_TRY_COMPILE_SYMBOL([
-		#include <linux/rwsem.h>
-		int rwsem_is_locked(struct rw_semaphore *sem) { return 0; }
-	], [], [rwsem_is_locked], [lib/rwsem-spinlock.c], [
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(RWSEM_IS_LOCKED_TAKES_WAIT_LOCK, 1,
-		          [rwsem_is_locked() acquires sem->wait_lock])
-	], [
-		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
 dnl # 2.6.xx API compat,
 dnl # There currently exists no exposed API to partially shrink the dcache.
 dnl # The expected mechanism to shrink the cache is a registered shrinker
@@ -2395,32 +2372,6 @@ AC_DEFUN([SPL_AC_SHRINK_CONTROL_STRUCT], [
 	],[
 		AC_MSG_RESULT(no)
 	])
-])
-
-dnl #
-dnl # 3.1 API Change
-dnl #
-dnl # The rw_semaphore.wait_lock member was changed from spinlock_t to
-dnl # raw_spinlock_t at commit ddb6c9b58a19edcfac93ac670b066c836ff729f1.
-dnl #
-AC_DEFUN([SPL_AC_RWSEM_SPINLOCK_IS_RAW], [
-	AC_MSG_CHECKING([whether struct rw_semaphore member wait_lock is raw])
-	tmp_flags="$EXTRA_KCFLAGS"
-	EXTRA_KCFLAGS="-Werror"
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/rwsem.h>
-	],[
-		struct rw_semaphore dummy_semaphore __attribute__ ((unused));
-		raw_spinlock_t dummy_lock __attribute__ ((unused));
-		dummy_semaphore.wait_lock = dummy_lock;
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(RWSEM_SPINLOCK_IS_RAW, 1,
-		[struct rw_semaphore member wait_lock is raw_spinlock_t])
-	],[
-		AC_MSG_RESULT(no)
-	])
-	EXTRA_KCFLAGS="$tmp_flags"
 ])
 
 dnl #

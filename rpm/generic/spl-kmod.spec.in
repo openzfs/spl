@@ -13,6 +13,13 @@
 %bcond_with     debug_kmem_tracking
 %bcond_with     atomic_spinlocks
 
+%if %{defined seckey}
+%define _seckey SECKEY=%{seckey}
+%endif
+
+%if %{defined pubkey}
+%define _pubkey PUBKEY=%{pubkey}
+%endif
 
 Name:           %{module}-kmod
 
@@ -135,7 +142,7 @@ for kernel_version in %{?kernel_versions}; do
         %{debug_kmem} \
         %{debug_kmem_tracking} \
         %{atomic_spinlocks}
-    make %{?_smp_mflags}
+    make %{?_smp_mflags} %{?_seckey} %{?_pubkey}
     cd ..
 done
 

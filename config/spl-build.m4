@@ -468,28 +468,36 @@ AC_DEFUN([SPL_AC_CONFIG], [
 	               [test "x$enable_linux_builtin" != xyes ])
 ])
 
+AC_DEFUN([SPL_AC_DEBUG_ENABLE], [
+	KERNELCPPFLAGS="${KERNELCPPFLAGS} -DDEBUG -Werror"
+	DEBUG_CFLAGS="-DDEBUG -Werror"
+	DEBUG_SPL="_with_debug"
+])
+
+AC_DEFUN([SPL_AC_DEBUG_DISABLE], [
+	KERNELCPPFLAGS="${KERNELCPPFLAGS} -DNDEBUG"
+	DEBUG_CFLAGS="-DNDEBUG"
+	DEBUG_SPL="_without_debug"
+])
+
 dnl #
 dnl # Enable if the SPL should be compiled with internal debugging enabled.
 dnl # By default this support is disabled.
 dnl #
 AC_DEFUN([SPL_AC_DEBUG], [
-	AC_MSG_CHECKING([whether debugging is enabled])
+	AC_MSG_CHECKING([whether assertion support will be enabled])
 	AC_ARG_ENABLE([debug],
 		[AS_HELP_STRING([--enable-debug],
-		[Enable generic debug support @<:@default=no@:>@])],
+		[Enable assertion support @<:@default=no@:>@])],
 		[],
 		[enable_debug=no])
 
-	AS_IF([test "x$enable_debug" = xyes],
-	[
-		KERNELCPPFLAGS="${KERNELCPPFLAGS} -DDEBUG -Werror"
-		DEBUG_CFLAGS="-DDEBUG -Werror"
-		DEBUG_SPL="_with_debug"
-	], [
-		KERNELCPPFLAGS="${KERNELCPPFLAGS} -DNDEBUG"
-		DEBUG_CFLAGS="-DNDEBUG"
-		DEBUG_SPL="_without_debug"
-	])
+	AS_CASE(["x$enable_debug"],
+		["xyes"],
+		[SPL_AC_DEBUG_ENABLE],
+		["xno"],
+		[SPL_AC_DEBUG_DISABLE],
+		[AC_MSG_ERROR([Unknown option $enable_debug])])
 
 	AC_SUBST(DEBUG_CFLAGS)
 	AC_SUBST(DEBUG_SPL)

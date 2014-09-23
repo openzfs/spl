@@ -18,6 +18,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	AC_SUBST(KERNELCPPFLAGS)
 
 	SPL_AC_DEBUG
+	SPL_AC_DEBUGINFO
 	SPL_AC_DEBUG_LOG
 	SPL_AC_DEBUG_KMEM
 	SPL_AC_DEBUG_KMEM_TRACKING
@@ -499,9 +500,46 @@ AC_DEFUN([SPL_AC_DEBUG], [
 		[SPL_AC_DEBUG_DISABLE],
 		[AC_MSG_ERROR([Unknown option $enable_debug])])
 
-	AC_SUBST(DEBUG_CFLAGS)
 	AC_SUBST(DEBUG_SPL)
 	AC_MSG_RESULT([$enable_debug])
+])
+
+AC_DEFUN([SPL_AC_DEBUGINFO_KERNEL], [
+	KERNELMAKE_PARAMS="$KERNELMAKE_PARAMS CONFIG_DEBUG_INFO=y"
+])
+
+AC_DEFUN([SPL_AC_DEBUGINFO_USER], [
+	DEBUG_CFLAGS="$DEBUG_CFLAGS -g"
+])
+
+dnl #
+dnl # Enable if the build system should be forced to compile with debuginfo.
+dnl # By default this is disabled because other things should control it.
+dnl # This is provided for distributions such as Ubuntu where kernel modules
+dnl # are not built with debuginfo, but the kernel is.
+dnl #
+AC_DEFUN([SPL_AC_DEBUGINFO], [
+	AC_MSG_CHECKING([whether debuginfo support will be forced])
+	AC_ARG_ENABLE([debuginfo],
+		[AS_HELP_STRING([--enable-debuginfo],
+		[Force generation of debuginfo @<:@default=no@:>@])],
+		[],
+		[enable_debuginfo=no])
+
+	AS_CASE(["x$enable_debuginfo"],
+		["xyes"],
+		[SPL_AC_DEBUGINFO_KERNEL
+		SPL_AC_DEBUGINFO_USER],
+		["xkernel"],
+		[SPL_AC_DEBUGINFO_KERNEL],
+		["xuser"],
+		[SPL_AC_DEBUGINFO_USER],
+		["xno"],
+		[],
+		[AC_MSG_ERROR([Unknown option $enable_debug])])
+
+	AC_SUBST(DEBUG_CFLAGS)
+	AC_MSG_RESULT([$enable_debuginfo])
 ])
 
 dnl #

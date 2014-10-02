@@ -89,7 +89,14 @@ __splat_linux_shrinker_fn(struct shrinker *shrink, struct shrink_control *sc)
 	/* Shrinker has run, so signal back to test. */
 	wake_up(&shrinker_wait);
 
+#ifdef HAVE_SPLIT_SHRINKER_CALLBACK
+	if (sc->nr_to_scan)
+		return (int)MIN(sc->nr_to_scan, splat_linux_shrinker_size);
+	else
+		return (int)splat_linux_shrinker_size;
+#else
 	return (int)splat_linux_shrinker_size;
+#endif
 }
 
 SPL_SHRINKER_CALLBACK_WRAPPER(splat_linux_shrinker_fn);

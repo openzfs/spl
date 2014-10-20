@@ -169,6 +169,7 @@ parse_buffer(FILE *in, FILE *out)
                 line->text = p;
 
                 if (!add_rec(line, &linev, &linev_len, kept)) {
+                        free(line);
                         fprintf(stderr, "malloc failed; printing accumulated "
                                 "records and exiting.\n");
                         break;

@@ -402,8 +402,6 @@ void spl_kmem_fini(void);
 #define kmem_cache_reap_now(skc)	\
         spl_kmem_cache_reap_now(skc, skc->skc_reap)
 #define kmem_reap()			spl_kmem_reap()
-#define kmem_virt(ptr)			(((ptr) >= (void *)VMALLOC_START) && \
-					 ((ptr) <  (void *)VMALLOC_END))
 
 /*
  * Allow custom slab allocation flags to be set for KMC_SLAB based caches.

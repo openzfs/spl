@@ -1976,7 +1976,7 @@ spl_kmem_cache_free(spl_kmem_cache_t *skc, void *obj)
 	 * are guaranteed to have physical addresses.  They must be removed
 	 * from the tree of emergency objects and the freed.
 	 */
-	if ((skc->skc_flags & KMC_VMEM) && !kmem_virt(obj))
+	if ((skc->skc_flags & KMC_VMEM) && !is_vmalloc_addr(obj))
 		SGOTO(out, spl_emergency_free(skc, obj));
 
 	local_irq_save(flags);

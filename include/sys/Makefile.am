@@ -94,6 +94,7 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/varargs.h \
 	$(top_srcdir)/include/sys/vfs.h \
 	$(top_srcdir)/include/sys/vfs_opreg.h \
+	$(top_srcdir)/include/sys/vmem.h \
 	$(top_srcdir)/include/sys/vmsystm.h \
 	$(top_srcdir)/include/sys/vnode.h \
 	$(top_srcdir)/include/sys/zmod.h \

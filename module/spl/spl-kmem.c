@@ -2095,7 +2095,7 @@ __spl_kmem_cache_generic_shrinker(struct shrinker *shrink,
 	 * system to thrash.
 	 */
 	if ((spl_kmem_cache_reclaim & KMC_RECLAIM_ONCE) && sc->nr_to_scan)
-		return (SHRINK_STOP);
+		return (SPL_SHRINK_STOP);
 
 	return (MAX(alloc, 0));
 }

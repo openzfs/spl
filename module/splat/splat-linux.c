@@ -87,7 +87,7 @@ __splat_linux_shrinker_fn(struct shrinker *shrink, struct shrink_control *sc)
 		splat_vprint(splat_linux_shrinker_file, SPLAT_LINUX_TEST1_NAME,
 		    "Far more calls than expected (%d), size now %lu\n",
 		   failsafe, splat_linux_shrinker_size);
-		return (SHRINK_STOP);
+		return (SPL_SHRINK_STOP);
 	} else {
 		/*
 		 * We only increment failsafe if it doesn't trigger.  This

@@ -190,7 +190,7 @@ fn ## _scan_objects(struct shrinker *shrink, struct shrink_control *sc)	\
 	int __ret__;							\
 									\
 	__ret__ = __ ## fn(NULL, sc);					\
-	return ((__ret__ < 0) ? SHRINK_STOP : __ret__);			\
+	return ((__ret__ < 0) ? SPL_SHRINK_STOP : __ret__);		\
 }
 #else
 /*
@@ -201,9 +201,10 @@ fn ## _scan_objects(struct shrinker *shrink, struct shrink_control *sc)	\
 
 #if defined(HAVE_SPLIT_SHRINKER_CALLBACK)
 typedef unsigned long	spl_shrinker_t;
+#define	SPL_SHRINK_STOP	SHRINK_STOP
 #else
 typedef int		spl_shrinker_t;
-#define	SHRINK_STOP	(-1)
+#define	SPL_SHRINK_STOP	(-1)
 #endif
 
 #endif /* SPL_MM_COMPAT_H */

@@ -26,6 +26,8 @@
 
 #include <sys/kmem.h>
 #include <spl-debug.h>
+#include <linux/mm_compat.h>
+#include <linux/wait_compat.h>
 
 #ifdef SS_DEBUG_SUBSYS
 #undef SS_DEBUG_SUBSYS

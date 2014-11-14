@@ -39,6 +39,7 @@
 #include <sys/kstat.h>
 #include <sys/file.h>
 #include <linux/kmod.h>
+#include <linux/math64_compat.h>
 #include <linux/proc_compat.h>
 #include <spl-debug.h>
 

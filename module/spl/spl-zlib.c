@@ -55,6 +55,7 @@
 
 #include <sys/kmem.h>
 #include <sys/zmod.h>
+#include <linux/zlib_compat.h>
 #include <spl-debug.h>
 
 #ifdef DEBUG_SUBSYSTEM

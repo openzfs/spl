@@ -33,15 +33,12 @@ typedef enum {
 	MUTEX_DEFAULT	= 0,
 	MUTEX_SPIN	= 1,
 	MUTEX_ADAPTIVE	= 2,
-	MUTEX_FSTRANS	= 3,
 } kmutex_type_t;
 
 typedef struct {
 	struct mutex		m_mutex;
-	kmutex_type_t		m_type;
 	spinlock_t		m_lock;	/* used for serializing mutex_exit */
 	kthread_t		*m_owner;
-	unsigned int		m_saved_flags;
 } kmutex_t;
 
 #define	MUTEX(mp)		(&((mp)->m_mutex))
@@ -58,27 +55,24 @@ typedef struct {
  */
 #undef mutex_init
 #define	mutex_init(mp, name, type, ibc)				\
-{								\
+do {								\
 	static struct lock_class_key __key;			\
 								\
 	ASSERT3P(mp, !=, NULL);					\
 	ASSERT3P(ibc, ==, NULL);				\
 	ASSERT((type == MUTEX_DEFAULT) ||			\
-	    (type == MUTEX_ADAPTIVE) ||				\
-	    (type == MUTEX_FSTRANS));				\
+	    (type == MUTEX_ADAPTIVE));				\
 								\
 	__mutex_init(MUTEX(mp), (name) ? (#name) : (#mp), &__key); \
 	spin_lock_init(&(mp)->m_lock);				\
-	(mp)->m_type = type;					\
 	(mp)->m_owner = NULL;					\
-	(mp)->m_saved_flags = 0;				\
-}
+} while (0)
 
 #undef mutex_destroy
 #define	mutex_destroy(mp)					\
-{								\
+do {								\
 	VERIFY3P(mutex_owner(mp), ==, NULL);			\
-}
+} while (0)
 
 #define	mutex_tryenter(mp)					\
 ({								\
@@ -86,38 +80,17 @@ typedef struct {
 								\
 	if ((_rc_ = mutex_trylock(MUTEX(mp))) == 1) {		\
 		(mp)->m_owner = current;			\
-		if ((mp)->m_type == MUTEX_FSTRANS) {		\
-			(mp)->m_saved_flags = current->flags;	\
-			current->flags |= PF_FSTRANS;		\
-		}						\
 	}							\
 								\
 	_rc_;							\
 })
 
-#ifdef CONFIG_DEBUG_LOCK_ALLOC
 #define	mutex_enter_nested(mp, subclass)			\
-{								\
+do {								\
 	ASSERT3P(mutex_owner(mp), !=, current);			\
 	mutex_lock_nested(MUTEX(mp), (subclass));		\
 	(mp)->m_owner = current;				\
-	if ((mp)->m_type == MUTEX_FSTRANS) {			\
-		(mp)->m_saved_flags = current->flags;		\
-		current->flags |= PF_FSTRANS;			\
-	}							\
-}
-#else /* CONFIG_DEBUG_LOCK_ALLOC */
-#define	mutex_enter_nested(mp, subclass)			\
-{								\
-	ASSERT3P(mutex_owner(mp), !=, current);			\
-	mutex_lock(MUTEX(mp));					\
-	(mp)->m_owner = current;				\
-	if ((mp)->m_type == MUTEX_FSTRANS) {			\
-		(mp)->m_saved_flags = current->flags;		\
-		current->flags |= PF_FSTRANS;			\
-	}							\
-}
-#endif /*  CONFIG_DEBUG_LOCK_ALLOC */
+} while (0)
 
 #define	mutex_enter(mp) mutex_enter_nested((mp), 0)
 
@@ -141,16 +114,12 @@ typedef struct {
  * See http://lwn.net/Articles/575477/ for the information about the race.
  */
 #define	mutex_exit(mp)						\
-{								\
+do {								\
 	spin_lock(&(mp)->m_lock);				\
-	if ((mp)->m_type == MUTEX_FSTRANS) {			\
-		current->flags &= ~(PF_FSTRANS);		\
-		current->flags |= (mp)->m_saved_flags;		\
-	}							\
 	(mp)->m_owner = NULL;					\
 	mutex_unlock(MUTEX(mp));				\
 	spin_unlock(&(mp)->m_lock);				\
-}
+} while (0)
 
 int spl_mutex_init(void);
 void spl_mutex_fini(void);

@@ -225,7 +225,11 @@ extern void spl_kmem_reap(void);
     spl_kmem_cache_create(name, size, align, ctor, dtor, rclm, priv, vmp, fl)
 #define	kmem_cache_set_move(skc, move)	spl_kmem_cache_set_move(skc, move)
 #define	kmem_cache_destroy(skc)		spl_kmem_cache_destroy(skc)
-#define	kmem_cache_alloc(skc, flags)	spl_kmem_cache_alloc(skc, flags)
+#define	kmem_cache_alloc(skc, flags)			\
+({							\
+	spl_kmem_debug_direct_reclaim_stub(flags);	\
+	spl_kmem_cache_alloc(skc, flags);		\
+})
 #define	kmem_cache_free(skc, obj)	spl_kmem_cache_free(skc, obj)
 #define	kmem_cache_reap_now(skc)	\
     spl_kmem_cache_reap_now(skc, skc->skc_reap)

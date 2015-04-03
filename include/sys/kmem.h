@@ -125,8 +125,32 @@ extern unsigned long long kmem_alloc_max;
 extern unsigned int spl_kmem_alloc_warn;
 extern unsigned int spl_kmem_alloc_max;
 
-#define	kmem_alloc(sz, fl)	spl_kmem_alloc((sz), (fl), __func__, __LINE__)
-#define	kmem_zalloc(sz, fl)	spl_kmem_zalloc((sz), (fl), __func__, __LINE__)
+#ifdef KMEM_DEBUG_DIRECT_RECLAIM
+typedef void (*spl_kmem_debug_direct_t)(int, unsigned long *, const char *);
+extern void spl_kmem_debug_direct_reclaim(int, unsigned long *, const char *);
+extern void spl_kmem_debug_direct_reclaim_register(spl_kmem_debug_direct_t);
+extern void spl_kmem_debug_direct_reclaim_unregister(void);
+#define spl_kmem_debug_direct_reclaim_stub(flags)			\
+do {									\
+	static unsigned long last_time = 0;				\
+	spl_kmem_debug_direct_reclaim(flags, &last_time, __func__);	\
+} while (0)
+#else
+#define	spl_kmem_debug_direct_reclaim_register(f)	do { } while (0)
+#define	spl_kmem_debug_direct_reclaim_unregister()	do { } while (0)
+#define	spl_kmem_debug_direct_reclaim_stub(flags)	do { } while (0)
+#endif
+
+#define	kmem_alloc(sz, fl)				\
+({							\
+	spl_kmem_debug_direct_reclaim_stub(fl);		\
+	spl_kmem_alloc((sz), (fl), __func__, __LINE__);	\
+})
+#define	kmem_zalloc(sz, fl)				\
+({							\
+	spl_kmem_debug_direct_reclaim_stub(fl);		\
+	spl_kmem_zalloc((sz), (fl), __func__, __LINE__);\
+})
 #define	kmem_free(ptr, sz)	spl_kmem_free((ptr), (sz))
 
 extern void *spl_kmem_alloc(size_t sz, int fl, const char *func, int line);

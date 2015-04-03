@@ -95,8 +95,16 @@ extern void *spl_vmalloc(unsigned long size, gfp_t lflags, pgprot_t prot);
  * to them.
  */
 
-#define	vmem_alloc(sz, fl)	spl_vmem_alloc((sz), (fl), __func__, __LINE__)
-#define	vmem_zalloc(sz, fl)	spl_vmem_zalloc((sz), (fl), __func__, __LINE__)
+#define	vmem_alloc(sz, fl)				\
+({							\
+	spl_kmem_debug_direct_reclaim_stub(fl);		\
+	spl_vmem_alloc((sz), (fl), __func__, __LINE__);	\
+})
+#define	vmem_zalloc(sz, fl)				\
+({							\
+	spl_kmem_debug_direct_reclaim_stub(fl);		\
+	spl_vmem_zalloc((sz), (fl), __func__, __LINE__);\
+})
 #define	vmem_free(ptr, sz)	spl_vmem_free((ptr), (sz))
 
 extern void *spl_vmem_alloc(size_t sz, int fl, const char *func, int line);

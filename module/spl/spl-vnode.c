@@ -648,6 +648,16 @@ vn_getf(int fd)
 	vnode_t *vp;
 	int rc = 0;
 
+	/*
+	 * Negative file descriptors passed to fget() will be implicitly
+	 * converted into positive file descriptors by C's type coercion rules
+	 * such that the value becomes fd + UINT_MAX + 1. That is wrong, so we
+	 * fail early on negative file descriptors.
+	 */
+	if (fd < 0) {
+		return (NULL);
+	}
+
 	/* Already open just take an extra reference */
 	spin_lock(&vn_file_lock);
 

@@ -61,11 +61,12 @@ typedef void (task_func_t)(void *);
 typedef struct taskq {
 	spinlock_t		tq_lock;       /* protects taskq_t */
 	unsigned long		tq_lock_flags; /* interrupt state */
-	const char		*tq_name;      /* taskq name */
+	char			*tq_name;      /* taskq name */
 	struct list_head	tq_thread_list;/* list of all threads */
 	struct list_head	tq_active_list;/* list of active threads */
 	int			tq_nactive;    /* # of active threads */
-	int			tq_nthreads;   /* # of total threads */
+	int			tq_nthreads;   /* # of existing threads */
+	int			tq_maxthreads; /* max # of threads */
 	int			tq_pri;        /* priority */
 	int			tq_minalloc;   /* min task_t pool size */
 	int			tq_maxalloc;   /* max task_t pool size */

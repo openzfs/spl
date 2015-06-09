@@ -31,9 +31,21 @@ int spl_taskq_thread_bind = 0;
 module_param(spl_taskq_thread_bind, int, 0644);
 MODULE_PARM_DESC(spl_taskq_thread_bind, "Bind taskq thread to CPU by default");
 
+
+int spl_taskq_thread_dynamic = 1;
+module_param(spl_taskq_thread_dynamic, int, 0644);
+MODULE_PARM_DESC(spl_taskq_thread_dynamic, "Allow dynamic taskq threads");
+
+int spl_taskq_thread_sequential = 1;
+module_param(spl_taskq_thread_sequential, int, 0644);
+MODULE_PARM_DESC(spl_taskq_thread_sequential,
+    "Create new taskq threads after N sequential tasks");
+
 /* Global system-wide dynamic task queue available for all consumers */
 taskq_t *system_taskq;
 EXPORT_SYMBOL(system_taskq);
+
+static taskq_thread_t *taskq_thread_create(taskq_t *);
 
 static int
 task_km_flags(uint_t flags)
@@ -434,17 +446,22 @@ taskq_member(taskq_t *tq, void *t)
 {
 	struct list_head *l;
 	taskq_thread_t *tqt;
+	int found = 0;
 
 	ASSERT(tq);
 	ASSERT(t);
 
+	spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
 	list_for_each(l, &tq->tq_thread_list) {
 		tqt = list_entry(l, taskq_thread_t, tqt_thread_list);
-		if (tqt->tqt_thread == (struct task_struct *)t)
-			return (1);
+		if (tqt->tqt_thread == (struct task_struct *)t) {
+			found = 1;
+			break;
+		}
 	}
+	spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
 
-	return (0);
+	return (found);
 }
 EXPORT_SYMBOL(taskq_member);
 
@@ -604,7 +621,6 @@ taskq_dispatch_ent(taskq_t *tq, task_func_t func, void *arg, uint_t flags,
 {
 	ASSERT(tq);
 	ASSERT(func);
-	ASSERT(!(tq->tq_flags & TASKQ_DYNAMIC));
 
 	spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
 
@@ -673,6 +689,7 @@ taskq_thread(void *args)
 	taskq_t *tq;
 	taskq_ent_t *t;
 	struct list_head *pend_list;
+	int seq_tasks = 0;
 
 	ASSERT(tqt);
 	tq = tqt->tqt_tq;
@@ -683,7 +700,13 @@ taskq_thread(void *args)
 	flush_signals(current);
 
 	spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
+
+	/* Immediately exit if more threads than allowed were created.*/
+	if (tq->tq_nthreads >= tq->tq_maxthreads)
+		goto error;
+
 	tq->tq_nthreads++;
+	list_add(&tqt->tqt_thread_list, &tq->tq_thread_list);
 	wake_up(&tq->tq_wait_waitq);
 	set_current_state(TASK_INTERRUPTIBLE);
 
@@ -691,15 +714,26 @@ taskq_thread(void *args)
 
 		if (list_empty(&tq->tq_pend_list) &&
 		    list_empty(&tq->tq_prio_list)) {
+
+			/*
+			 * Dynamic taskqs will destroy threads which would
+			 * otherwise be idle, they are recreated as needed.
+			 */
+			if ((tq->tq_flags & TASKQ_DYNAMIC) &&
+			    (tq->tq_nthreads > 1) && spl_taskq_thread_dynamic)
+				break;
+
 			add_wait_queue_exclusive(&tq->tq_work_waitq, &wait);
 			spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
+
+			seq_tasks = 0;
 			schedule();
+
 			spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
 			remove_wait_queue(&tq->tq_work_waitq, &wait);
 		} else {
 			__set_current_state(TASK_RUNNING);
 		}
-
 
 		if (!list_empty(&tq->tq_prio_list))
 			pend_list = &tq->tq_prio_list;
@@ -732,14 +766,27 @@ taskq_thread(void *args)
 			/* Perform the requested task */
 			t->tqent_func(t->tqent_arg);
 
+			/*
+			 * Dynamic taskq's will create additional threads up
+			 * to tq_maxthreads when a single thread has handled
+			 * more than spl_taskq_thread_sequential tasks without
+			 * sleeping due to an empty queue.
+			 */
+			if ((++seq_tasks > spl_taskq_thread_sequential) &&
+			    (tq->tq_flags & TASKQ_DYNAMIC) &&
+			    (tq->tq_flags & TQ_ACTIVE) &&
+			    (tq->tq_nthreads < tq->tq_maxthreads)) {
+				taskq_thread_create(tq);
+				seq_tasks = 0;
+			}
+
 			spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
 			tq->tq_nactive--;
 			list_del_init(&tqt->tqt_active_list);
 			tqt->tqt_task = NULL;
 
 			/* For prealloc'd tasks, we don't free anything. */
-			if ((tq->tq_flags & TASKQ_DYNAMIC) ||
-			    !(tqt->tqt_flags & TQENT_FLAG_PREALLOC))
+			if (!(tqt->tqt_flags & TQENT_FLAG_PREALLOC))
 				task_done(tq, t);
 
 			/* When the current lowest outstanding taskqid is
@@ -761,27 +808,56 @@ taskq_thread(void *args)
 	__set_current_state(TASK_RUNNING);
 	tq->tq_nthreads--;
 	list_del_init(&tqt->tqt_thread_list);
+error:
 	kmem_free(tqt, sizeof(taskq_thread_t));
-
 	spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
 
 	return (0);
+}
+
+static taskq_thread_t *
+taskq_thread_create(taskq_t *tq)
+{
+	static int last_used_cpu = 0;
+	taskq_thread_t *tqt;
+
+	tqt = kmem_alloc(sizeof(*tqt), KM_PUSHPAGE);
+	INIT_LIST_HEAD(&tqt->tqt_thread_list);
+	INIT_LIST_HEAD(&tqt->tqt_active_list);
+	tqt->tqt_tq = tq;
+	tqt->tqt_id = 0;
+
+	tqt->tqt_thread = spl_kthread_create(taskq_thread, tqt,
+	    "%s", tq->tq_name);
+	if (tqt->tqt_thread == NULL) {
+		kmem_free(tqt, sizeof (taskq_thread_t));
+		return (NULL);
+	}
+
+	if (spl_taskq_thread_bind) {
+		last_used_cpu = (last_used_cpu + 1) % num_online_cpus();
+		kthread_bind(tqt->tqt_thread, last_used_cpu);
+	}
+
+	set_user_nice(tqt->tqt_thread, PRIO_TO_NICE(tq->tq_pri));
+	wake_up_process(tqt->tqt_thread);
+
+	return (tqt);
 }
 
 taskq_t *
 taskq_create(const char *name, int nthreads, pri_t pri,
     int minalloc, int maxalloc, uint_t flags)
 {
-	static int last_used_cpu = 0;
 	taskq_t *tq;
 	taskq_thread_t *tqt;
-	int rc = 0, i, j = 0;
+	int count = 0, rc = 0, i;
 
 	ASSERT(name != NULL);
 	ASSERT(pri <= maxclsyspri);
 	ASSERT(minalloc >= 0);
 	ASSERT(maxalloc <= INT_MAX);
-	ASSERT(!(flags & (TASKQ_CPR_SAFE | TASKQ_DYNAMIC))); /* Unsupported */
+	ASSERT(!(flags & (TASKQ_CPR_SAFE))); /* Unsupported */
 
 	/* Scale the number of threads using nthreads as a percentage */
 	if (flags & TASKQ_THREADS_CPU_PCT) {
@@ -797,19 +873,19 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 		return (NULL);
 
 	spin_lock_init(&tq->tq_lock);
-	spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
 	INIT_LIST_HEAD(&tq->tq_thread_list);
 	INIT_LIST_HEAD(&tq->tq_active_list);
-	tq->tq_name      = name;
-	tq->tq_nactive   = 0;
-	tq->tq_nthreads  = 0;
-	tq->tq_pri       = pri;
-	tq->tq_minalloc  = minalloc;
-	tq->tq_maxalloc  = maxalloc;
-	tq->tq_nalloc    = 0;
-	tq->tq_flags     = (flags | TQ_ACTIVE);
-	tq->tq_next_id   = 1;
-	tq->tq_lowest_id = 1;
+	tq->tq_name       = strdup(name);
+	tq->tq_nactive    = 0;
+	tq->tq_nthreads   = 0;
+	tq->tq_maxthreads = nthreads;
+	tq->tq_pri        = pri;
+	tq->tq_minalloc   = minalloc;
+	tq->tq_maxalloc   = maxalloc;
+	tq->tq_nalloc     = 0;
+	tq->tq_flags      = (flags | TQ_ACTIVE);
+	tq->tq_next_id    = 1;
+	tq->tq_lowest_id  = 1;
 	INIT_LIST_HEAD(&tq->tq_free_list);
 	INIT_LIST_HEAD(&tq->tq_pend_list);
 	INIT_LIST_HEAD(&tq->tq_prio_list);
@@ -817,38 +893,28 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 	init_waitqueue_head(&tq->tq_work_waitq);
 	init_waitqueue_head(&tq->tq_wait_waitq);
 
-	if (flags & TASKQ_PREPOPULATE)
+	if (flags & TASKQ_PREPOPULATE) {
+		spin_lock_irqsave(&tq->tq_lock, tq->tq_lock_flags);
+
 		for (i = 0; i < minalloc; i++)
 			task_done(tq, task_alloc(tq, TQ_PUSHPAGE | TQ_NEW));
 
-	spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
+		spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
+	}
+
+	if ((flags & TASKQ_DYNAMIC) && spl_taskq_thread_dynamic)
+		nthreads = 1;
 
 	for (i = 0; i < nthreads; i++) {
-		tqt = kmem_alloc(sizeof(*tqt), KM_PUSHPAGE);
-		INIT_LIST_HEAD(&tqt->tqt_thread_list);
-		INIT_LIST_HEAD(&tqt->tqt_active_list);
-		tqt->tqt_tq = tq;
-		tqt->tqt_id = 0;
-
-		tqt->tqt_thread = spl_kthread_create(taskq_thread, tqt,
-		    "%s/%d", name, i);
-		if (tqt->tqt_thread) {
-			list_add(&tqt->tqt_thread_list, &tq->tq_thread_list);
-			if (spl_taskq_thread_bind) {
-				last_used_cpu = (last_used_cpu + 1) % num_online_cpus();
-				kthread_bind(tqt->tqt_thread, last_used_cpu);
-			}
-			set_user_nice(tqt->tqt_thread, PRIO_TO_NICE(pri));
-			wake_up_process(tqt->tqt_thread);
-			j++;
-		} else {
-			kmem_free(tqt, sizeof(taskq_thread_t));
+		tqt = taskq_thread_create(tq);
+		if (tqt == NULL)
 			rc = 1;
-		}
+		else
+			count++;
 	}
 
 	/* Wait for all threads to be started before potential destroy */
-	wait_event(tq->tq_wait_waitq, tq->tq_nthreads == j);
+	wait_event(tq->tq_wait_waitq, tq->tq_nthreads == count);
 
 	if (rc) {
 		taskq_destroy(tq);
@@ -913,6 +979,7 @@ taskq_destroy(taskq_t *tq)
 
 	spin_unlock_irqrestore(&tq->tq_lock, tq->tq_lock_flags);
 
+	strfree(tq->tq_name);
 	kmem_free(tq, sizeof(taskq_t));
 }
 EXPORT_SYMBOL(taskq_destroy);
@@ -920,10 +987,10 @@ EXPORT_SYMBOL(taskq_destroy);
 int
 spl_taskq_init(void)
 {
-	/* Solaris creates a dynamic taskq of up to 64 threads, however in
-	 * a Linux environment 1 thread per-core is usually about right */
-	system_taskq = taskq_create("spl_system_taskq", num_online_cpus(),
-				    minclsyspri, 4, 512, TASKQ_PREPOPULATE);
+	int threads = MAX(num_online_cpus(), 64);
+
+	system_taskq = taskq_create("spl_system_taskq", threads,
+	    minclsyspri, threads, INT_MAX, TASKQ_PREPOPULATE | TASKQ_DYNAMIC);
 	if (system_taskq == NULL)
 		return (1);
 

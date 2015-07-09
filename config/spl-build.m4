@@ -270,6 +270,7 @@ AC_DEFUN([SPL_AC_DPKG], [
 	],[
 		HAVE_DPKG=no
 		AC_MSG_RESULT([$HAVE_DPKG])
+		AC_MSG_ERROR(["please install the $DPKG package and re-run configure"], [1])
 	])
 
 	AC_MSG_CHECKING([whether $DPKGBUILD is available])
@@ -281,6 +282,7 @@ AC_DEFUN([SPL_AC_DPKG], [
 	],[
 		HAVE_DPKGBUILD=no
 		AC_MSG_RESULT([$HAVE_DPKGBUILD])
+		AC_MSG_ERROR(["please install the $DPKGBUILD package and re-run configure"], [1])
 	])
 
 	AC_SUBST(HAVE_DPKG)
@@ -309,6 +311,7 @@ AC_DEFUN([SPL_AC_ALIEN], [
 	],[
 		HAVE_ALIEN=no
 		AC_MSG_RESULT([$HAVE_ALIEN])
+		AC_MSG_ERROR(["please install the $ALIEN package and re-run configure"], [1])
 	])
 
 	AC_SUBST(HAVE_ALIEN)

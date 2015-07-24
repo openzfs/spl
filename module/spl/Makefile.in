@@ -18,7 +18,6 @@ $(MODULE)-objs += spl-taskq.o
 $(MODULE)-objs += spl-rwlock.o
 $(MODULE)-objs += spl-vnode.o
 $(MODULE)-objs += spl-err.o
-$(MODULE)-objs += spl-kobj.o
 $(MODULE)-objs += spl-generic.o
 $(MODULE)-objs += spl-atomic.o
 $(MODULE)-objs += spl-mutex.o

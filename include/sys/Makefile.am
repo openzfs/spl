@@ -45,7 +45,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/kidmap.h \
 	$(top_srcdir)/include/sys/kmem.h \
 	$(top_srcdir)/include/sys/kmem_cache.h \
-	$(top_srcdir)/include/sys/kobj.h \
 	$(top_srcdir)/include/sys/kstat.h \
 	$(top_srcdir)/include/sys/list.h \
 	$(top_srcdir)/include/sys/mkdev.h \

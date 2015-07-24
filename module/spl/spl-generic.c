@@ -27,7 +27,6 @@
 #include <sys/sysmacros.h>
 #include <sys/systeminfo.h>
 #include <sys/vmsystm.h>
-#include <sys/kobj.h>
 #include <sys/kmem.h>
 #include <sys/kmem_cache.h>
 #include <sys/vmem.h>
@@ -40,8 +39,10 @@
 #include <sys/proc.h>
 #include <sys/kstat.h>
 #include <sys/file.h>
+#include <sys/vnode.h>
 #include <linux/ctype.h>
 #include <linux/kmod.h>
+#include <linux/file_compat.h>
 #include <linux/math64_compat.h>
 #include <linux/proc_compat.h>
 
@@ -409,51 +410,45 @@ MODULE_PARM_DESC(spl_hostid_path, "The system hostid file (/etc/hostid)");
 static int
 hostid_read(void)
 {
-	int result;
-	uint64_t size;
-	struct _buf *file;
+	struct file *fp;
+	struct kstat stat;
 	uint32_t hostid = 0;
+	ssize_t bytes;
+	loff_t pos = 0;
+	int error;
 
-	file = kobj_open_file(spl_hostid_path);
-
-	if (file == (struct _buf *)-1)
-		return -1;
-
-	result = kobj_get_filesize(file, &size);
-
-	if (result != 0) {
-		printk(KERN_WARNING
-		       "SPL: kobj_get_filesize returned %i on %s\n",
-		       result, spl_hostid_path);
-		kobj_close_file(file);
-		return -2;
+	fp = spl_file_open(spl_hostid_path, O_RDONLY, 0644);
+	if (IS_ERR(fp)) {
+		error = PTR_ERR(fp);
+		goto out;
 	}
 
-	if (size < sizeof(HW_HOSTID_MASK)) {
-		printk(KERN_WARNING
-		       "SPL: Ignoring the %s file because it is %llu bytes; "
-		       "expecting %lu bytes instead.\n", spl_hostid_path,
-		       size, (unsigned long)sizeof(HW_HOSTID_MASK));
-		kobj_close_file(file);
-		return -3;
+	error = spl_file_stat(fp, &stat);
+	if (error)
+		goto out;
+
+	if (stat.size < sizeof(HW_HOSTID_MASK)) {
+		error = -EIO;
+		goto out;
 	}
 
-	/* Read directly into the variable like eglibc does. */
-	/* Short reads are okay; native behavior is preserved. */
-	result = kobj_read_file(file, (char *)&hostid, sizeof(hostid), 0);
-
-	if (result < 0) {
-		printk(KERN_WARNING
-		       "SPL: kobj_read_file returned %i on %s\n",
-		       result, spl_hostid_path);
-		kobj_close_file(file);
-		return -4;
+	/* Read directly into the variable like eglibc does */
+	bytes = spl_file_read(fp, (char *)&hostid, sizeof (hostid), &pos);
+	if (bytes != sizeof (hostid)) {
+		error = -EIO;
+		goto out;
 	}
 
 	/* Mask down to 32 bits like coreutils does. */
 	spl_hostid = hostid & HW_HOSTID_MASK;
-	kobj_close_file(file);
-	return 0;
+out:
+	if (error)
+		printk(KERN_WARNING
+		    "SPL: Ignoring the %s file: %d\n", spl_hostid_path, error);
+
+	spl_file_close(fp);
+
+	return (error);
 }
 
 uint32_t

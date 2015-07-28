@@ -25,6 +25,8 @@
 #ifndef _SPL_SID_H
 #define _SPL_SID_H
 
+#include <sys/kmem.h>
+
 typedef struct ksiddomain {
 	char		*kd_name;
 } ksiddomain_t;

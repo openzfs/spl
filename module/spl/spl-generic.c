@@ -25,7 +25,6 @@
 \*****************************************************************************/
 
 #include <sys/sysmacros.h>
-#include <sys/systeminfo.h>
 #include <sys/vmsystm.h>
 #include <sys/kmem.h>
 #include <sys/kmem_cache.h>
@@ -46,11 +45,6 @@
 
 char spl_version[32] = "SPL v" SPL_META_VERSION "-" SPL_META_RELEASE;
 EXPORT_SYMBOL(spl_version);
-
-unsigned long spl_hostid = 0;
-EXPORT_SYMBOL(spl_hostid);
-module_param(spl_hostid, ulong, 0644);
-MODULE_PARM_DESC(spl_hostid, "The system hostid.");
 
 proc_t p0 = { 0 };
 EXPORT_SYMBOL(p0);
@@ -353,117 +347,6 @@ __put_task_struct(struct task_struct *t)
 }
 EXPORT_SYMBOL(__put_task_struct);
 #endif /* HAVE_PUT_TASK_STRUCT */
-
-/*
- * Read the unique system identifier from the /etc/hostid file.
- *
- * The behavior of /usr/bin/hostid on Linux systems with the
- * regular eglibc and coreutils is:
- *
- *   1. Generate the value if the /etc/hostid file does not exist
- *      or if the /etc/hostid file is less than four bytes in size.
- *
- *   2. If the /etc/hostid file is at least 4 bytes, then return
- *      the first four bytes [0..3] in native endian order.
- *
- *   3. Always ignore bytes [4..] if they exist in the file.
- *
- * Only the first four bytes are significant, even on systems that
- * have a 64-bit word size.
- *
- * See:
- *
- *   eglibc: sysdeps/unix/sysv/linux/gethostid.c
- *   coreutils: src/hostid.c
- *
- * Notes:
- *
- * The /etc/hostid file on Solaris is a text file that often reads:
- *
- *   # DO NOT EDIT
- *   "0123456789"
- *
- * Directly copying this file to Linux results in a constant
- * hostid of 4f442023 because the default comment constitutes
- * the first four bytes of the file.
- *
- */
-
-char *spl_hostid_path = HW_HOSTID_PATH;
-module_param(spl_hostid_path, charp, 0444);
-MODULE_PARM_DESC(spl_hostid_path, "The system hostid file (/etc/hostid)");
-
-static int
-hostid_read(void)
-{
-	struct file *fp;
-	struct kstat stat;
-	uint32_t hostid = 0;
-	ssize_t bytes;
-	loff_t pos = 0;
-	int error;
-
-	fp = spl_file_open(spl_hostid_path, O_RDONLY, 0644);
-	if (IS_ERR(fp)) {
-		error = PTR_ERR(fp);
-		goto out;
-	}
-
-	error = spl_file_stat(fp, &stat);
-	if (error)
-		goto out;
-
-	if (stat.size < sizeof(HW_HOSTID_MASK)) {
-		error = -EIO;
-		goto out;
-	}
-
-	/* Read directly into the variable like eglibc does */
-	bytes = spl_file_read(fp, (char *)&hostid, sizeof (hostid), &pos);
-	if (bytes != sizeof (hostid)) {
-		error = -EIO;
-		goto out;
-	}
-
-	/* Mask down to 32 bits like coreutils does. */
-	spl_hostid = hostid & HW_HOSTID_MASK;
-out:
-	if (error)
-		printk(KERN_WARNING
-		    "SPL: Ignoring the %s file: %d\n", spl_hostid_path, error);
-
-	spl_file_close(fp);
-
-	return (error);
-}
-
-uint32_t
-zone_get_hostid(void *zone)
-{
-	static int first = 1;
-
-	/* Only the global zone is supported */
-	ASSERT(zone == NULL);
-
-	if (first) {
-		first = 0;
-
-		spl_hostid &= HW_HOSTID_MASK;
-		/*
-		 * Get the hostid if it was not passed as a module parameter.
-		 * Try reading the /etc/hostid file directly.
-		 */
-		if (spl_hostid == 0 && hostid_read())
-			spl_hostid = 0;
-
-
-		printk(KERN_NOTICE "SPL: using hostid 0x%08x\n",
-			(unsigned int) spl_hostid);
-	}
-
-	return spl_hostid;
-}
-EXPORT_SYMBOL(zone_get_hostid);
 
 static int
 spl_kvmem_init(void)

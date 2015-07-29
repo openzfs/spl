@@ -213,32 +213,6 @@ Default value: \fB0\fR
 .sp
 .ne 2
 .na
-\fBspl_hostid\fR (ulong)
-.ad
-.RS 12n
-The system hostid, when set this can be used to uniquely identify a system.
-By default this value is set to zero which indicates the hostid is disabled.
-It can be explicitly enabled by placing a unique non-zero value in
-\fB/etc/hostid/\fR.
-.sp
-Default value: \fB0\fR
-.RE
-
-.sp
-.ne 2
-.na
-\fBspl_hostid_path\fR (charp)
-.ad
-.RS 12n
-The expected path to locate the system hostid when specified.  This value
-may be overridden for non-standard configurations.
-.sp
-Default value: \fB/etc/hostid\fR
-.RE
-
-.sp
-.ne 2
-.na
 \fBspl_taskq_thread_bind\fR (int)
 .ad
 .RS 12n

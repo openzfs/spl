@@ -24,7 +24,6 @@
  *  Solaris Porting Layer (SPL) Proc Implementation.
 \*****************************************************************************/
 
-#include <sys/systeminfo.h>
 #include <sys/kstat.h>
 #include <sys/kmem.h>
 #include <sys/kmem_cache.h>
@@ -50,59 +49,6 @@ static struct proc_dir_entry *proc_spl = NULL;
 static struct proc_dir_entry *proc_spl_kmem = NULL;
 static struct proc_dir_entry *proc_spl_kmem_slab = NULL;
 struct proc_dir_entry *proc_spl_kstat = NULL;
-
-static int
-proc_copyin_string(char *kbuffer, int kbuffer_size,
-                   const char *ubuffer, int ubuffer_size)
-{
-        int size;
-
-        if (ubuffer_size > kbuffer_size)
-                return -EOVERFLOW;
-
-        if (copy_from_user((void *)kbuffer, (void *)ubuffer, ubuffer_size))
-                return -EFAULT;
-
-        /* strip trailing whitespace */
-        size = strnlen(kbuffer, ubuffer_size);
-        while (size-- >= 0)
-                if (!isspace(kbuffer[size]))
-                        break;
-
-        /* empty string */
-        if (size < 0)
-                return -EINVAL;
-
-        /* no space to terminate */
-        if (size == kbuffer_size)
-                return -EOVERFLOW;
-
-        kbuffer[size + 1] = 0;
-        return 0;
-}
-
-static int
-proc_copyout_string(char *ubuffer, int ubuffer_size,
-                    const char *kbuffer, char *append)
-{
-        /* NB if 'append' != NULL, it's a single character to append to the
-         * copied out string - usually "\n", for /proc entries and
-         * (i.e. a terminating zero byte) for sysctl entries
-         */
-        int size = MIN(strlen(kbuffer), ubuffer_size);
-
-        if (copy_to_user(ubuffer, kbuffer, size))
-                return -EFAULT;
-
-        if (append != NULL && size < ubuffer_size) {
-                if (copy_to_user(ubuffer + size, append, 1))
-                        return -EFAULT;
-
-                size++;
-        }
-
-        return size;
-}
 
 #ifdef DEBUG_KMEM
 static int
@@ -175,41 +121,6 @@ proc_doslab(struct ctl_table *table, int write,
 
                 up_read(&spl_kmem_cache_sem);
                 rc = proc_doulongvec_minmax(&dummy, write, buffer, lenp, ppos);
-        }
-
-        return (rc);
-}
-
-static int
-proc_dohostid(struct ctl_table *table, int write,
-    void __user *buffer, size_t *lenp, loff_t *ppos)
-{
-        int len, rc = 0;
-        char *end, str[32];
-
-        if (write) {
-                /* We can't use proc_doulongvec_minmax() in the write
-                 * case here because hostid while a hex value has no
-                 * leading 0x which confuses the helper function. */
-                rc = proc_copyin_string(str, sizeof(str), buffer, *lenp);
-                if (rc < 0)
-                        return (rc);
-
-                spl_hostid = simple_strtoul(str, &end, 16);
-                if (str == end)
-                        return (-EINVAL);
-
-        } else {
-                len = snprintf(str, sizeof(str), "%lx", spl_hostid);
-                if (*ppos >= len)
-                        rc = 0;
-                else
-                        rc = proc_copyout_string(buffer,*lenp,str+*ppos,"\n");
-
-                if (rc >= 0) {
-                        *lenp = rc;
-                        *ppos += rc;
-                }
         }
 
         return (rc);
@@ -419,13 +330,6 @@ static struct ctl_table spl_table[] = {
                 .maxlen   = sizeof(spl_version),
                 .mode     = 0444,
                 .proc_handler = &proc_dostring,
-        },
-        {
-                .procname = "hostid",
-                .data     = &spl_hostid,
-                .maxlen   = sizeof(unsigned long),
-                .mode     = 0644,
-                .proc_handler = &proc_dohostid,
         },
 	{
 		.procname = "kmem",

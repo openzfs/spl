@@ -75,7 +75,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/sysdc.h \
 	$(top_srcdir)/include/sys/sysevent.h \
 	$(top_srcdir)/include/sys/sysmacros.h \
-	$(top_srcdir)/include/sys/systeminfo.h \
 	$(top_srcdir)/include/sys/systm.h \
 	$(top_srcdir)/include/sys/taskq.h \
 	$(top_srcdir)/include/sys/thread.h \

@@ -25,9 +25,6 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_SHRINKER_CALLBACK
 	SPL_AC_CTL_NAME
 	SPL_AC_PDE_DATA
-	SPL_AC_2ARGS_VFS_UNLINK
-	SPL_AC_2ARGS_VFS_GETATTR
-	SPL_AC_2ARGS_VFS_FSYNC
 	SPL_AC_KUIDGID_T
 	SPL_AC_PUT_TASK_STRUCT
 	SPL_AC_CONFIG_ZLIB_INFLATE
@@ -875,44 +872,6 @@ AC_DEFUN([SPL_AC_PDE_DATA], [
 ])
 
 dnl #
-dnl # 3.13 API change
-dnl # vfs_unlink() updated to take a third delegated_inode argument.
-dnl #
-AC_DEFUN([SPL_AC_2ARGS_VFS_UNLINK],
-	[AC_MSG_CHECKING([whether vfs_unlink() wants 2 args])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		vfs_unlink((struct inode *) NULL, (struct dentry *) NULL);
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_2ARGS_VFS_UNLINK, 1,
-		          [vfs_unlink() wants 2 args])
-	],[
-		AC_MSG_RESULT(no)
-		dnl #
-		dnl # Linux 3.13 API change
-		dnl # Added delegated inode
-		dnl #
-		AC_MSG_CHECKING([whether vfs_unlink() wants 3 args])
-		SPL_LINUX_TRY_COMPILE([
-			#include <linux/fs.h>
-		],[
-			vfs_unlink((struct inode *) NULL,
-				(struct dentry *) NULL,
-				(struct inode **) NULL);
-		],[
-			AC_MSG_RESULT(yes)
-			AC_DEFINE(HAVE_3ARGS_VFS_UNLINK, 1,
-				  [vfs_unlink() wants 3 args])
-		],[
-			AC_MSG_ERROR(no)
-		])
-
-	])
-])
-
-dnl #
 dnl # User namespaces, use kuid_t in place of uid_t
 dnl # where available. Not strictly a user namespaces thing
 dnl # but it should prevent surprises
@@ -956,24 +915,6 @@ AC_DEFUN([SPL_AC_PUT_TASK_STRUCT],
 		AC_DEFINE(HAVE_PUT_TASK_STRUCT, 1,
 		          [__put_task_struct() is available])
 	], [
-		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
-dnl # 2.6.35 API change,
-dnl # Unused 'struct dentry *' removed from vfs_fsync() prototype.
-dnl #
-AC_DEFUN([SPL_AC_2ARGS_VFS_FSYNC], [
-	AC_MSG_CHECKING([whether vfs_fsync() wants 2 args])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		vfs_fsync(NULL, 0);
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_2ARGS_VFS_FSYNC, 1, [vfs_fsync() wants 2 args])
-	],[
 		AC_MSG_RESULT(no)
 	])
 ])
@@ -1106,37 +1047,6 @@ AC_DEFUN([SPL_AC_SCHED_RT_HEADER],
 		AC_MSG_RESULT(yes)
 	],[
 		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
-dnl # 3.9 API change,
-dnl # vfs_getattr() uses 2 args
-dnl # It takes struct path * instead of struct vfsmount * and struct dentry *
-dnl #
-AC_DEFUN([SPL_AC_2ARGS_VFS_GETATTR], [
-	AC_MSG_CHECKING([whether vfs_getattr() wants])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		vfs_getattr((struct path *) NULL,
-			(struct kstat *)NULL);
-	],[
-		AC_MSG_RESULT(2 args)
-		AC_DEFINE(HAVE_2ARGS_VFS_GETATTR, 1,
-		          [vfs_getattr wants 2 args])
-	],[
-		SPL_LINUX_TRY_COMPILE([
-			#include <linux/fs.h>
-		],[
-			vfs_getattr((struct vfsmount *)NULL,
-				(struct dentry *)NULL,
-				(struct kstat *)NULL);
-		],[
-			AC_MSG_RESULT(3 args)
-		],[
-			AC_MSG_ERROR(unknown)
-		])
 	])
 ])
 

@@ -39,7 +39,6 @@
 #include <sys/kstat.h>
 #include <linux/ctype.h>
 #include <linux/kmod.h>
-#include <linux/file_compat.h>
 #include <linux/math64_compat.h>
 #include <linux/proc_compat.h>
 

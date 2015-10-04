@@ -19,6 +19,9 @@ BuildArch:      noarch
 Requires:       dkms >= 2.2.0.2
 Requires:       gcc, make, perl
 Requires:       kernel-devel
+Requires:       zlib-devel, libuuid-devel, libblkid-devel,
+Requires:       libselinux-devel, parted, lsscsi, autoconf,
+Requires:       automake, libtool 
 Provides:       %{module}-kmod = %{version}
 
 %description

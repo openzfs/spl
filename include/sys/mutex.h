@@ -37,7 +37,8 @@ typedef enum {
 
 typedef struct {
 	struct mutex		m_mutex;
-	spinlock_t		m_lock;	/* used for serializing mutex_exit */
+	spinlock_t		m_lock;
+	kmutex_type_t		m_type;
 	kthread_t		*m_owner;
 } kmutex_t;
 
@@ -70,11 +71,12 @@ spl_mutex_clear_owner(kmutex_t *mp)
 #define	mutex_init(mp, name, type, ibc)				\
 {								\
 	static struct lock_class_key __key;			\
-	ASSERT(type == MUTEX_DEFAULT);				\
+	ASSERT(type == MUTEX_DEFAULT || type == MUTEX_SPIN);	\
 								\
 	__mutex_init(MUTEX(mp), (name) ? (#name) : (#mp), &__key); \
 	spin_lock_init(&(mp)->m_lock);				\
 	spl_mutex_clear_owner(mp);				\
+	(mp)->m_type = type;					\
 }
 
 #undef mutex_destroy
@@ -87,8 +89,19 @@ spl_mutex_clear_owner(kmutex_t *mp)
 ({								\
 	int _rc_;						\
 								\
-	if ((_rc_ = mutex_trylock(MUTEX(mp))) == 1)		\
-		spl_mutex_set_owner(mp);			\
+	switch ((mp)->m_type) {					\
+	case MUTEX_DEFAULT:					\
+		if ((_rc_ = mutex_trylock(MUTEX(mp))) != 0)	\
+			spl_mutex_set_owner(mp);		\
+		break;						\
+	case MUTEX_SPIN:					\
+		if ((_rc_ = spin_trylock(&(mp)->m_lock)) != 0)	\
+			spl_mutex_set_owner(mp);		\
+		break;						\
+	default:						\
+		_rc_ = 0;					\
+		VERIFY(0);					\
+	}							\
 								\
 	_rc_;							\
 })
@@ -109,10 +122,23 @@ spl_mutex_clear_owner(kmutex_t *mp)
 }
 #endif /*  CONFIG_DEBUG_LOCK_ALLOC */
 
-#define	mutex_enter(mp) mutex_enter_nested((mp), 0)
+#define	mutex_enter(mp)						\
+{								\
+	switch ((mp)->m_type) {					\
+	case MUTEX_DEFAULT:					\
+		mutex_enter_nested((mp), 0);			\
+		break;						\
+	case MUTEX_SPIN:					\
+		spin_lock(&(mp)->m_lock);			\
+		spl_mutex_set_owner(mp);			\
+		break;						\
+	default:						\
+		VERIFY(0);					\
+	}							\
+}
 
 /*
- * The reason for the spinlock:
+ * The reason for the spinlock on MUTEX_DEFAULT:
  *
  * The Linux mutex is designed with a fast-path/slow-path design such that it
  * does not guarantee serialization upon itself, allowing a race where latter
@@ -132,10 +158,21 @@ spl_mutex_clear_owner(kmutex_t *mp)
  */
 #define	mutex_exit(mp)						\
 {								\
-	spin_lock(&(mp)->m_lock);				\
 	spl_mutex_clear_owner(mp);				\
-	mutex_unlock(MUTEX(mp));				\
-	spin_unlock(&(mp)->m_lock);				\
+								\
+	switch ((mp)->m_type) {					\
+	case MUTEX_DEFAULT:					\
+		spin_lock(&(mp)->m_lock);			\
+		mutex_unlock(MUTEX(mp));			\
+		spin_unlock(&(mp)->m_lock);			\
+		break;						\
+	case MUTEX_SPIN:					\
+		spin_unlock(&(mp)->m_lock);			\
+		break;						\
+	default:						\
+		VERIFY(0);					\
+	}							\
+								\
 }
 
 int spl_mutex_init(void);

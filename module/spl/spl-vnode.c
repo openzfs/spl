@@ -631,7 +631,7 @@ file_find(int fd, struct task_struct *task)
 
         list_for_each_entry(fp, &vn_file_list,  f_list) {
 		if (fd == fp->f_fd && fp->f_task == task) {
-			ASSERT(atomic_read(&fp->f_ref) != 0);
+			ASSERT(fp->f_ref != 0);
                         return fp;
 		}
 	}
@@ -656,7 +656,7 @@ vn_getf(int fd)
 
 	fp = file_find(fd, current);
 	if (fp) {
-		atomic_inc(&fp->f_ref);
+		fp->f_ref++;
 		spin_unlock(&vn_file_lock);
 		return (fp);
 	}
@@ -671,7 +671,6 @@ vn_getf(int fd)
 	fp->f_fd = fd;
 	fp->f_task = current;
 	fp->f_offset = 0;
-	atomic_inc(&fp->f_ref);
 
 	lfp = fget(fd);
 	if (lfp == NULL)
@@ -746,8 +745,7 @@ vn_areleasef(int fd, uf_info_t *fip)
 	spin_lock(&vn_file_lock);
 	fp = file_find(fd, task);
 	if (fp) {
-		atomic_dec(&fp->f_ref);
-		if (atomic_read(&fp->f_ref) > 0) {
+		if (--fp->f_ref > 0) {
 			spin_unlock(&vn_file_lock);
 			return;
 		}
@@ -846,7 +844,7 @@ vn_file_cache_constructor(void *buf, void *cdrarg, int kmflags)
 {
 	file_t *fp = buf;
 
-	atomic_set(&fp->f_ref, 0);
+	fp->f_ref = 1;
 	INIT_LIST_HEAD(&fp->f_list);
 
         return (0);

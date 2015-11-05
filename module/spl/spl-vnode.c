@@ -668,8 +668,6 @@ vn_getf(int fd)
 	if (fp == NULL)
 		goto out;
 
-	mutex_enter(&fp->f_lock);
-
 	fp->f_fd = fd;
 	fp->f_task = current;
 	fp->f_offset = 0;
@@ -704,7 +702,6 @@ vn_getf(int fd)
 	list_add(&fp->f_list, &vn_file_list);
 	spin_unlock(&vn_file_lock);
 
-	mutex_exit(&fp->f_lock);
 	return (fp);
 
 out_vnode:
@@ -712,7 +709,6 @@ out_vnode:
 out_fget:
 	fput(lfp);
 out_mutex:
-	mutex_exit(&fp->f_lock);
 	kmem_cache_free(vn_file_cache, fp);
 out:
         return (NULL);
@@ -851,7 +847,6 @@ vn_file_cache_constructor(void *buf, void *cdrarg, int kmflags)
 	file_t *fp = buf;
 
 	atomic_set(&fp->f_ref, 0);
-        mutex_init(&fp->f_lock, NULL, MUTEX_DEFAULT, NULL);
 	INIT_LIST_HEAD(&fp->f_list);
 
         return (0);
@@ -861,8 +856,6 @@ static void
 vn_file_cache_destructor(void *buf, void *cdrarg)
 {
 	file_t *fp = buf;
-
-	mutex_destroy(&fp->f_lock);
 } /* vn_file_cache_destructor() */
 
 int

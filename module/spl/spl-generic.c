@@ -38,8 +38,6 @@
 #include <sys/debug.h>
 #include <sys/proc.h>
 #include <sys/kstat.h>
-#include <sys/file.h>
-#include <sys/vnode.h>
 #include <linux/ctype.h>
 #include <linux/kmod.h>
 #include <linux/file_compat.h>
@@ -329,12 +327,6 @@ EXPORT_SYMBOL(ddi_strtoull);
 int
 ddi_copyin(const void *from, void *to, size_t len, int flags)
 {
-	/* Fake ioctl() issued by kernel, 'from' is a kernel address */
-	if (flags & FKIOCTL) {
-		memcpy(to, from, len);
-		return 0;
-	}
-
 	return copyin(from, to, len);
 }
 EXPORT_SYMBOL(ddi_copyin);
@@ -342,12 +334,6 @@ EXPORT_SYMBOL(ddi_copyin);
 int
 ddi_copyout(const void *from, void *to, size_t len, int flags)
 {
-	/* Fake ioctl() issued by kernel, 'from' is a kernel address */
-	if (flags & FKIOCTL) {
-		memcpy(to, from, len);
-		return 0;
-	}
-
 	return copyout(from, to, len);
 }
 EXPORT_SYMBOL(ddi_copyout);
@@ -530,33 +516,28 @@ spl_init(void)
 	if ((rc = spl_taskq_init()))
 		goto out4;
 
-	if ((rc = spl_vn_init()))
+	if ((rc = spl_proc_init()))
 		goto out5;
 
-	if ((rc = spl_proc_init()))
+	if ((rc = spl_kstat_init()))
 		goto out6;
 
-	if ((rc = spl_kstat_init()))
+	if ((rc = spl_tsd_init()))
 		goto out7;
 
-	if ((rc = spl_tsd_init()))
-		goto out8;
-
 	if ((rc = spl_zlib_init()))
-		goto out9;
+		goto out8;
 
 	printk(KERN_NOTICE "SPL: Loaded module v%s-%s%s\n", SPL_META_VERSION,
 	       SPL_META_RELEASE, SPL_DEBUG_STR);
 	return (rc);
 
-out9:
-	spl_tsd_fini();
 out8:
-	spl_kstat_fini();
+	spl_tsd_fini();
 out7:
-	spl_proc_fini();
+	spl_kstat_fini();
 out6:
-	spl_vn_fini();
+	spl_proc_fini();
 out5:
 	spl_taskq_fini();
 out4:
@@ -582,7 +563,6 @@ spl_fini(void)
 	spl_tsd_fini();
 	spl_kstat_fini();
 	spl_proc_fini();
-	spl_vn_fini();
 	spl_taskq_fini();
 	spl_rw_fini();
 	spl_mutex_fini();

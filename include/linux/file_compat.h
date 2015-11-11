@@ -28,9 +28,6 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
-#ifdef HAVE_FDTABLE_HEADER
-#include <linux/fdtable.h>
-#endif
 
 #define	spl_file_open(name, fl, mode)	filp_open(name, fl, mode)
 #define	spl_file_close(f)		filp_close(f, NULL)
@@ -61,26 +58,6 @@ spl_file_write(struct file *fp, char __user *buf, size_t count, loff_t *pos)
 	set_fs(saved_fs);
 
 	return (ret);
-}
-
-static inline int
-spl_file_fallocate(struct file *fp, int mode, loff_t offset, loff_t len)
-{
-	int error = -EOPNOTSUPP;
-
-#ifdef HAVE_FILE_FALLOCATE
-	if (fp->f_op->fallocate)
-		error = fp->f_op->fallocate(fp, mode, offset, len);
-#else
-#ifdef HAVE_INODE_FALLOCATE
-	if (fp->f_dentry && fp->f_dentry->d_inode &&
-	    fp->f_dentry->d_inode->i_op->fallocate)
-		error = fp->f_dentry->d_inode->i_op->fallocate(
-		    fp->f_dentry->d_inode, mode, offset, len);
-#endif /* HAVE_INODE_FALLOCATE */
-#endif /*HAVE_FILE_FALLOCATE */
-
-	return (error);
 }
 
 #ifdef HAVE_2ARGS_VFS_UNLINK

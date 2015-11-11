@@ -36,7 +36,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/errno.h \
 	$(top_srcdir)/include/sys/extdirent.h \
 	$(top_srcdir)/include/sys/fcntl.h \
-	$(top_srcdir)/include/sys/file.h \
 	$(top_srcdir)/include/sys/idmap.h \
 	$(top_srcdir)/include/sys/int_limits.h \
 	$(top_srcdir)/include/sys/int_types.h \
@@ -50,7 +49,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/mkdev.h \
 	$(top_srcdir)/include/sys/mntent.h \
 	$(top_srcdir)/include/sys/modctl.h \
-	$(top_srcdir)/include/sys/mode.h \
 	$(top_srcdir)/include/sys/mount.h \
 	$(top_srcdir)/include/sys/mutex.h \
 	$(top_srcdir)/include/sys/note.h \
@@ -97,7 +95,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/vfs_opreg.h \
 	$(top_srcdir)/include/sys/vmem.h \
 	$(top_srcdir)/include/sys/vmsystm.h \
-	$(top_srcdir)/include/sys/vnode.h \
 	$(top_srcdir)/include/sys/zmod.h \
 	$(top_srcdir)/include/sys/zone.h
 

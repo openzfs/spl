@@ -30,7 +30,6 @@
 #include <sys/sunldi.h>
 #include <sys/mutex.h>
 #include <sys/u8_textprep.h>
-#include <sys/vnode.h>
 
 typedef int ddi_devid_t;
 

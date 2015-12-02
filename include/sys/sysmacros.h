@@ -151,10 +151,8 @@
 
 /* Missing globals */
 extern char spl_version[32];
-extern unsigned long spl_hostid;
 
 /* Missing misc functions */
-extern uint32_t zone_get_hostid(void *zone);
 extern void spl_setup(void);
 extern void spl_cleanup(void);
 

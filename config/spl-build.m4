@@ -25,22 +25,14 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_SHRINKER_CALLBACK
 	SPL_AC_CTL_NAME
 	SPL_AC_PDE_DATA
-	SPL_AC_SET_FS_PWD_WITH_CONST
-	SPL_AC_2ARGS_VFS_UNLINK
-	SPL_AC_4ARGS_VFS_RENAME
-	SPL_AC_2ARGS_VFS_FSYNC
-	SPL_AC_INODE_TRUNCATE_RANGE
-	SPL_AC_FS_STRUCT_SPINLOCK
 	SPL_AC_KUIDGID_T
 	SPL_AC_PUT_TASK_STRUCT
-	SPL_AC_KERNEL_FALLOCATE
 	SPL_AC_CONFIG_ZLIB_INFLATE
 	SPL_AC_CONFIG_ZLIB_DEFLATE
 	SPL_AC_2ARGS_ZLIB_DEFLATE_WORKSPACESIZE
 	SPL_AC_SHRINK_CONTROL_STRUCT
 	SPL_AC_RWSEM_SPINLOCK_IS_RAW
 	SPL_AC_SCHED_RT_HEADER
-	SPL_AC_2ARGS_VFS_GETATTR
 	SPL_AC_USLEEP_RANGE
 	SPL_AC_KMEM_CACHE_ALLOCFLAGS
 	SPL_AC_WAIT_ON_BIT
@@ -880,170 +872,6 @@ AC_DEFUN([SPL_AC_PDE_DATA], [
 ])
 
 dnl #
-dnl # 3.9 API change
-dnl # set_fs_pwd takes const struct path *
-dnl #
-AC_DEFUN([SPL_AC_SET_FS_PWD_WITH_CONST],
-	tmp_flags="$EXTRA_KCFLAGS"
-	EXTRA_KCFLAGS="-Werror"
-	[AC_MSG_CHECKING([whether set_fs_pwd() requires const struct path *])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/spinlock.h>
-		#include <linux/fs_struct.h>
-		#include <linux/path.h>
-		void (*const set_fs_pwd_func)
-			(struct fs_struct *, const struct path *)
-			= set_fs_pwd;
-	],[
-		return 0;
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_SET_FS_PWD_WITH_CONST, 1,
-			[set_fs_pwd() needs const path *])
-	],[
-		SPL_LINUX_TRY_COMPILE([
-			#include <linux/spinlock.h>
-			#include <linux/fs_struct.h>
-			#include <linux/path.h>
-			void (*const set_fs_pwd_func)
-				(struct fs_struct *, struct path *)
-				= set_fs_pwd;
-		],[
-			return 0;
-		],[
-			AC_MSG_RESULT(no)
-		],[
-			AC_MSG_ERROR(unknown)
-		])
-	])
-	EXTRA_KCFLAGS="$tmp_flags"
-])
-
-dnl #
-dnl # 3.13 API change
-dnl # vfs_unlink() updated to take a third delegated_inode argument.
-dnl #
-AC_DEFUN([SPL_AC_2ARGS_VFS_UNLINK],
-	[AC_MSG_CHECKING([whether vfs_unlink() wants 2 args])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		vfs_unlink((struct inode *) NULL, (struct dentry *) NULL);
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_2ARGS_VFS_UNLINK, 1,
-		          [vfs_unlink() wants 2 args])
-	],[
-		AC_MSG_RESULT(no)
-		dnl #
-		dnl # Linux 3.13 API change
-		dnl # Added delegated inode
-		dnl #
-		AC_MSG_CHECKING([whether vfs_unlink() wants 3 args])
-		SPL_LINUX_TRY_COMPILE([
-			#include <linux/fs.h>
-		],[
-			vfs_unlink((struct inode *) NULL,
-				(struct dentry *) NULL,
-				(struct inode **) NULL);
-		],[
-			AC_MSG_RESULT(yes)
-			AC_DEFINE(HAVE_3ARGS_VFS_UNLINK, 1,
-				  [vfs_unlink() wants 3 args])
-		],[
-			AC_MSG_ERROR(no)
-		])
-
-	])
-])
-
-dnl #
-dnl # 3.13 and 3.15 API changes
-dnl # Added delegated inode and flags argument.
-dnl #
-AC_DEFUN([SPL_AC_4ARGS_VFS_RENAME],
-	[AC_MSG_CHECKING([whether vfs_rename() wants 4 args])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		vfs_rename((struct inode *) NULL, (struct dentry *) NULL,
-			(struct inode *) NULL, (struct dentry *) NULL);
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_4ARGS_VFS_RENAME, 1,
-		          [vfs_rename() wants 4 args])
-	],[
-		AC_MSG_RESULT(no)
-		dnl #
-		dnl # Linux 3.13 API change
-		dnl # Added delegated inode
-		dnl #
-		AC_MSG_CHECKING([whether vfs_rename() wants 5 args])
-		SPL_LINUX_TRY_COMPILE([
-			#include <linux/fs.h>
-		],[
-			vfs_rename((struct inode *) NULL,
-				(struct dentry *) NULL,
-				(struct inode *) NULL,
-				(struct dentry *) NULL,
-				(struct inode **) NULL);
-		],[
-			AC_MSG_RESULT(yes)
-			AC_DEFINE(HAVE_5ARGS_VFS_RENAME, 1,
-				  [vfs_rename() wants 5 args])
-		],[
-			AC_MSG_RESULT(no)
-			dnl #
-			dnl # Linux 3.15 API change
-			dnl # Added flags
-			dnl #
-			AC_MSG_CHECKING([whether vfs_rename() wants 6 args])
-			SPL_LINUX_TRY_COMPILE([
-				#include <linux/fs.h>
-			],[
-				vfs_rename((struct inode *) NULL,
-					(struct dentry *) NULL,
-					(struct inode *) NULL,
-					(struct dentry *) NULL,
-					(struct inode **) NULL,
-					(unsigned int) 0);
-			],[
-				AC_MSG_RESULT(yes)
-				AC_DEFINE(HAVE_6ARGS_VFS_RENAME, 1,
-					  [vfs_rename() wants 6 args])
-			],[
-				AC_MSG_ERROR(no)
-			])
-		])
-	])
-])
-
-dnl #
-dnl # 2.6.36 API change,
-dnl # The 'struct fs_struct->lock' was changed from a rwlock_t to
-dnl # a spinlock_t to improve the fastpath performance.
-dnl #
-AC_DEFUN([SPL_AC_FS_STRUCT_SPINLOCK], [
-	AC_MSG_CHECKING([whether struct fs_struct uses spinlock_t])
-	tmp_flags="$EXTRA_KCFLAGS"
-	EXTRA_KCFLAGS="-Werror"
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/sched.h>
-		#include <linux/fs_struct.h>
-	],[
-		static struct fs_struct fs;
-		spin_lock_init(&fs.lock);
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_FS_STRUCT_SPINLOCK, 1,
-		          [struct fs_struct uses spinlock_t])
-	],[
-		AC_MSG_RESULT(no)
-	])
-	EXTRA_KCFLAGS="$tmp_flags"
-])
-
-dnl #
 dnl # User namespaces, use kuid_t in place of uid_t
 dnl # where available. Not strictly a user namespaces thing
 dnl # but it should prevent surprises
@@ -1089,114 +917,6 @@ AC_DEFUN([SPL_AC_PUT_TASK_STRUCT],
 	], [
 		AC_MSG_RESULT(no)
 	])
-])
-
-dnl #
-dnl # 2.6.35 API change,
-dnl # Unused 'struct dentry *' removed from vfs_fsync() prototype.
-dnl #
-AC_DEFUN([SPL_AC_2ARGS_VFS_FSYNC], [
-	AC_MSG_CHECKING([whether vfs_fsync() wants 2 args])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		vfs_fsync(NULL, 0);
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_2ARGS_VFS_FSYNC, 1, [vfs_fsync() wants 2 args])
-	],[
-		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
-dnl # 3.5 API change,
-dnl # inode_operations.truncate_range removed
-dnl #
-AC_DEFUN([SPL_AC_INODE_TRUNCATE_RANGE], [
-	AC_MSG_CHECKING([whether truncate_range() inode operation is available])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		struct inode_operations ops;
-		ops.truncate_range = NULL;
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_INODE_TRUNCATE_RANGE, 1,
-			[truncate_range() inode operation is available])
-	],[
-		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
-dnl # Linux 2.6.38 - 3.x API
-dnl #
-AC_DEFUN([SPL_AC_KERNEL_FILE_FALLOCATE], [
-	AC_MSG_CHECKING([whether fops->fallocate() exists])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		long (*fallocate) (struct file *, int, loff_t, loff_t) = NULL;
-		struct file_operations fops __attribute__ ((unused)) = {
-			.fallocate = fallocate,
-		};
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_FILE_FALLOCATE, 1, [fops->fallocate() exists])
-	],[
-		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
-dnl # Linux 2.6.x - 2.6.37 API
-dnl #
-AC_DEFUN([SPL_AC_KERNEL_INODE_FALLOCATE], [
-	AC_MSG_CHECKING([whether iops->fallocate() exists])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		long (*fallocate) (struct inode *, int, loff_t, loff_t) = NULL;
-		struct inode_operations fops __attribute__ ((unused)) = {
-			.fallocate = fallocate,
-		};
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_INODE_FALLOCATE, 1, [fops->fallocate() exists])
-	],[
-		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
-dnl # PaX Linux 2.6.38 - 3.x API
-dnl #
-AC_DEFUN([SPL_AC_PAX_KERNEL_FILE_FALLOCATE], [
-	AC_MSG_CHECKING([whether fops->fallocate() exists])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		long (*fallocate) (struct file *, int, loff_t, loff_t) = NULL;
-		struct file_operations_no_const fops __attribute__ ((unused)) = {
-			.fallocate = fallocate,
-		};
-	],[
-		AC_MSG_RESULT(yes)
-		AC_DEFINE(HAVE_FILE_FALLOCATE, 1, [fops->fallocate() exists])
-	],[
-		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
-dnl # The fallocate callback was moved from the inode_operations
-dnl # structure to the file_operations structure.
-dnl #
-AC_DEFUN([SPL_AC_KERNEL_FALLOCATE], [
-	SPL_AC_KERNEL_FILE_FALLOCATE
-	SPL_AC_KERNEL_INODE_FALLOCATE
-	SPL_AC_PAX_KERNEL_FILE_FALLOCATE
 ])
 
 dnl #
@@ -1327,37 +1047,6 @@ AC_DEFUN([SPL_AC_SCHED_RT_HEADER],
 		AC_MSG_RESULT(yes)
 	],[
 		AC_MSG_RESULT(no)
-	])
-])
-
-dnl #
-dnl # 3.9 API change,
-dnl # vfs_getattr() uses 2 args
-dnl # It takes struct path * instead of struct vfsmount * and struct dentry *
-dnl #
-AC_DEFUN([SPL_AC_2ARGS_VFS_GETATTR], [
-	AC_MSG_CHECKING([whether vfs_getattr() wants])
-	SPL_LINUX_TRY_COMPILE([
-		#include <linux/fs.h>
-	],[
-		vfs_getattr((struct path *) NULL,
-			(struct kstat *)NULL);
-	],[
-		AC_MSG_RESULT(2 args)
-		AC_DEFINE(HAVE_2ARGS_VFS_GETATTR, 1,
-		          [vfs_getattr wants 2 args])
-	],[
-		SPL_LINUX_TRY_COMPILE([
-			#include <linux/fs.h>
-		],[
-			vfs_getattr((struct vfsmount *)NULL,
-				(struct dentry *)NULL,
-				(struct kstat *)NULL);
-		],[
-			AC_MSG_RESULT(3 args)
-		],[
-			AC_MSG_ERROR(unknown)
-		])
 	])
 ])
 

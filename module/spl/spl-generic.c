@@ -25,9 +25,7 @@
 \*****************************************************************************/
 
 #include <sys/sysmacros.h>
-#include <sys/systeminfo.h>
 #include <sys/vmsystm.h>
-#include <sys/kobj.h>
 #include <sys/kmem.h>
 #include <sys/kmem_cache.h>
 #include <sys/vmem.h>
@@ -39,7 +37,6 @@
 #include <sys/debug.h>
 #include <sys/proc.h>
 #include <sys/kstat.h>
-#include <sys/file.h>
 #include <linux/ctype.h>
 #include <linux/kmod.h>
 #include <linux/math64_compat.h>
@@ -47,11 +44,6 @@
 
 char spl_version[32] = "SPL v" SPL_META_VERSION "-" SPL_META_RELEASE;
 EXPORT_SYMBOL(spl_version);
-
-unsigned long spl_hostid = 0;
-EXPORT_SYMBOL(spl_hostid);
-module_param(spl_hostid, ulong, 0644);
-MODULE_PARM_DESC(spl_hostid, "The system hostid.");
 
 proc_t p0 = { 0 };
 EXPORT_SYMBOL(p0);
@@ -328,12 +320,6 @@ EXPORT_SYMBOL(ddi_strtoull);
 int
 ddi_copyin(const void *from, void *to, size_t len, int flags)
 {
-	/* Fake ioctl() issued by kernel, 'from' is a kernel address */
-	if (flags & FKIOCTL) {
-		memcpy(to, from, len);
-		return 0;
-	}
-
 	return copyin(from, to, len);
 }
 EXPORT_SYMBOL(ddi_copyin);
@@ -341,12 +327,6 @@ EXPORT_SYMBOL(ddi_copyin);
 int
 ddi_copyout(const void *from, void *to, size_t len, int flags)
 {
-	/* Fake ioctl() issued by kernel, 'from' is a kernel address */
-	if (flags & FKIOCTL) {
-		memcpy(to, from, len);
-		return 0;
-	}
-
 	return copyout(from, to, len);
 }
 EXPORT_SYMBOL(ddi_copyout);
@@ -366,123 +346,6 @@ __put_task_struct(struct task_struct *t)
 }
 EXPORT_SYMBOL(__put_task_struct);
 #endif /* HAVE_PUT_TASK_STRUCT */
-
-/*
- * Read the unique system identifier from the /etc/hostid file.
- *
- * The behavior of /usr/bin/hostid on Linux systems with the
- * regular eglibc and coreutils is:
- *
- *   1. Generate the value if the /etc/hostid file does not exist
- *      or if the /etc/hostid file is less than four bytes in size.
- *
- *   2. If the /etc/hostid file is at least 4 bytes, then return
- *      the first four bytes [0..3] in native endian order.
- *
- *   3. Always ignore bytes [4..] if they exist in the file.
- *
- * Only the first four bytes are significant, even on systems that
- * have a 64-bit word size.
- *
- * See:
- *
- *   eglibc: sysdeps/unix/sysv/linux/gethostid.c
- *   coreutils: src/hostid.c
- *
- * Notes:
- *
- * The /etc/hostid file on Solaris is a text file that often reads:
- *
- *   # DO NOT EDIT
- *   "0123456789"
- *
- * Directly copying this file to Linux results in a constant
- * hostid of 4f442023 because the default comment constitutes
- * the first four bytes of the file.
- *
- */
-
-char *spl_hostid_path = HW_HOSTID_PATH;
-module_param(spl_hostid_path, charp, 0444);
-MODULE_PARM_DESC(spl_hostid_path, "The system hostid file (/etc/hostid)");
-
-static int
-hostid_read(void)
-{
-	int result;
-	uint64_t size;
-	struct _buf *file;
-	uint32_t hostid = 0;
-
-	file = kobj_open_file(spl_hostid_path);
-
-	if (file == (struct _buf *)-1)
-		return -1;
-
-	result = kobj_get_filesize(file, &size);
-
-	if (result != 0) {
-		printk(KERN_WARNING
-		       "SPL: kobj_get_filesize returned %i on %s\n",
-		       result, spl_hostid_path);
-		kobj_close_file(file);
-		return -2;
-	}
-
-	if (size < sizeof(HW_HOSTID_MASK)) {
-		printk(KERN_WARNING
-		       "SPL: Ignoring the %s file because it is %llu bytes; "
-		       "expecting %lu bytes instead.\n", spl_hostid_path,
-		       size, (unsigned long)sizeof(HW_HOSTID_MASK));
-		kobj_close_file(file);
-		return -3;
-	}
-
-	/* Read directly into the variable like eglibc does. */
-	/* Short reads are okay; native behavior is preserved. */
-	result = kobj_read_file(file, (char *)&hostid, sizeof(hostid), 0);
-
-	if (result < 0) {
-		printk(KERN_WARNING
-		       "SPL: kobj_read_file returned %i on %s\n",
-		       result, spl_hostid_path);
-		kobj_close_file(file);
-		return -4;
-	}
-
-	/* Mask down to 32 bits like coreutils does. */
-	spl_hostid = hostid & HW_HOSTID_MASK;
-	kobj_close_file(file);
-	return 0;
-}
-
-uint32_t
-zone_get_hostid(void *zone)
-{
-	static int first = 1;
-
-	/* Only the global zone is supported */
-	ASSERT(zone == NULL);
-
-	if (first) {
-		first = 0;
-
-		spl_hostid &= HW_HOSTID_MASK;
-		/*
-		 * Get the hostid if it was not passed as a module parameter.
-		 * Try reading the /etc/hostid file directly.
-		 */
-		if (spl_hostid == 0 && hostid_read())
-			spl_hostid = 0;
-
-
-		printk(KERN_NOTICE "SPL: using hostid 0x%08x\n",
-			(unsigned int) spl_hostid);
-	}
-
-	return spl_hostid;
-}
-EXPORT_SYMBOL(zone_get_hostid);
 
 static int
 spl_kvmem_init(void)
@@ -535,33 +398,28 @@ spl_init(void)
 	if ((rc = spl_taskq_init()))
 		goto out4;
 
-	if ((rc = spl_vn_init()))
+	if ((rc = spl_proc_init()))
 		goto out5;
 
-	if ((rc = spl_proc_init()))
+	if ((rc = spl_kstat_init()))
 		goto out6;
 
-	if ((rc = spl_kstat_init()))
+	if ((rc = spl_tsd_init()))
 		goto out7;
 
-	if ((rc = spl_tsd_init()))
-		goto out8;
-
 	if ((rc = spl_zlib_init()))
-		goto out9;
+		goto out8;
 
 	printk(KERN_NOTICE "SPL: Loaded module v%s-%s%s\n", SPL_META_VERSION,
 	       SPL_META_RELEASE, SPL_DEBUG_STR);
 	return (rc);
 
-out9:
-	spl_tsd_fini();
 out8:
-	spl_kstat_fini();
+	spl_tsd_fini();
 out7:
-	spl_proc_fini();
+	spl_kstat_fini();
 out6:
-	spl_vn_fini();
+	spl_proc_fini();
 out5:
 	spl_taskq_fini();
 out4:
@@ -587,7 +445,6 @@ spl_fini(void)
 	spl_tsd_fini();
 	spl_kstat_fini();
 	spl_proc_fini();
-	spl_vn_fini();
 	spl_taskq_fini();
 	spl_rw_fini();
 	spl_mutex_fini();

@@ -27,8 +27,7 @@
 
 #include "splat-ctl.h"
 #include <sys/mutex.h>
-#include <linux/file_compat.h>
-#include <linux/version.h>
+#include <linux/fs.h>
 
 #define SPLAT_SUBSYSTEM_INIT(type)                                      \
 ({      splat_subsystem_t *_sub_;                                       \
@@ -173,8 +172,6 @@ splat_subsystem_t *splat_rwlock_init(void);
 splat_subsystem_t *splat_taskq_init(void);
 splat_subsystem_t *splat_thread_init(void);
 splat_subsystem_t *splat_time_init(void);
-splat_subsystem_t *splat_vnode_init(void);
-splat_subsystem_t *splat_kobj_init(void);
 splat_subsystem_t *splat_atomic_init(void);
 splat_subsystem_t *splat_list_init(void);
 splat_subsystem_t *splat_generic_init(void);
@@ -190,8 +187,6 @@ void splat_rwlock_fini(splat_subsystem_t *);
 void splat_taskq_fini(splat_subsystem_t *);
 void splat_thread_fini(splat_subsystem_t *);
 void splat_time_fini(splat_subsystem_t *);
-void splat_vnode_fini(splat_subsystem_t *);
-void splat_kobj_fini(splat_subsystem_t *);
 void splat_atomic_fini(splat_subsystem_t *);
 void splat_list_fini(splat_subsystem_t *);
 void splat_generic_fini(splat_subsystem_t *);
@@ -207,8 +202,6 @@ int splat_rwlock_id(void);
 int splat_taskq_id(void);
 int splat_thread_id(void);
 int splat_time_id(void);
-int splat_vnode_id(void);
-int splat_kobj_id(void);
 int splat_atomic_id(void);
 int splat_list_id(void);
 int splat_generic_id(void);

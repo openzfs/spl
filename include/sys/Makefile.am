@@ -37,7 +37,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/errno.h \
 	$(top_srcdir)/include/sys/extdirent.h \
 	$(top_srcdir)/include/sys/fcntl.h \
-	$(top_srcdir)/include/sys/file.h \
 	$(top_srcdir)/include/sys/idmap.h \
 	$(top_srcdir)/include/sys/int_limits.h \
 	$(top_srcdir)/include/sys/int_types.h \
@@ -46,13 +45,11 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/kidmap.h \
 	$(top_srcdir)/include/sys/kmem.h \
 	$(top_srcdir)/include/sys/kmem_cache.h \
-	$(top_srcdir)/include/sys/kobj.h \
 	$(top_srcdir)/include/sys/kstat.h \
 	$(top_srcdir)/include/sys/list.h \
 	$(top_srcdir)/include/sys/mkdev.h \
 	$(top_srcdir)/include/sys/mntent.h \
 	$(top_srcdir)/include/sys/modctl.h \
-	$(top_srcdir)/include/sys/mode.h \
 	$(top_srcdir)/include/sys/mount.h \
 	$(top_srcdir)/include/sys/mutex.h \
 	$(top_srcdir)/include/sys/note.h \
@@ -79,7 +76,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/sysdc.h \
 	$(top_srcdir)/include/sys/sysevent.h \
 	$(top_srcdir)/include/sys/sysmacros.h \
-	$(top_srcdir)/include/sys/systeminfo.h \
 	$(top_srcdir)/include/sys/systm.h \
 	$(top_srcdir)/include/sys/taskq.h \
 	$(top_srcdir)/include/sys/thread.h \
@@ -99,7 +95,6 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/vfs_opreg.h \
 	$(top_srcdir)/include/sys/vmem.h \
 	$(top_srcdir)/include/sys/vmsystm.h \
-	$(top_srcdir)/include/sys/vnode.h \
 	$(top_srcdir)/include/sys/zmod.h \
 	$(top_srcdir)/include/sys/zone.h
 

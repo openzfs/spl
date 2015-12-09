@@ -532,19 +532,19 @@ spl_init(void)
 	if ((rc = spl_rw_init()))
 		goto out3;
 
-	if ((rc = spl_taskq_init()))
+	if ((rc = spl_tsd_init()))
 		goto out4;
 
-	if ((rc = spl_vn_init()))
+	if ((rc = spl_taskq_init()))
 		goto out5;
 
-	if ((rc = spl_proc_init()))
+	if ((rc = spl_vn_init()))
 		goto out6;
 
-	if ((rc = spl_kstat_init()))
+	if ((rc = spl_proc_init()))
 		goto out7;
 
-	if ((rc = spl_tsd_init()))
+	if ((rc = spl_kstat_init()))
 		goto out8;
 
 	if ((rc = spl_zlib_init()))
@@ -555,15 +555,15 @@ spl_init(void)
 	return (rc);
 
 out9:
-	spl_tsd_fini();
-out8:
 	spl_kstat_fini();
-out7:
+out8:
 	spl_proc_fini();
-out6:
+out7:
 	spl_vn_fini();
-out5:
+out6:
 	spl_taskq_fini();
+out5:
+	spl_tsd_fini();
 out4:
 	spl_rw_fini();
 out3:
@@ -584,11 +584,11 @@ spl_fini(void)
 	printk(KERN_NOTICE "SPL: Unloaded module v%s-%s%s\n",
 	       SPL_META_VERSION, SPL_META_RELEASE, SPL_DEBUG_STR);
 	spl_zlib_fini();
-	spl_tsd_fini();
 	spl_kstat_fini();
 	spl_proc_fini();
 	spl_vn_fini();
 	spl_taskq_fini();
+	spl_tsd_fini();
 	spl_rw_fini();
 	spl_mutex_fini();
 	spl_kvmem_fini();

@@ -24,6 +24,7 @@
 
 #include <sys/debug.h>
 #include <sys/sysmacros.h>
+#include <linux/api_compat.h>
 #include <sys/kmem.h>
 #include <sys/vmem.h>
 #include <linux/mm.h>
@@ -80,7 +81,8 @@ kmem_vasprintf(const char *fmt, va_list ap)
 
 	do {
 		va_copy(aq, ap);
-		ptr = kvasprintf(kmem_flags_convert(KM_SLEEP), fmt, aq);
+		LINUX_API_CALL(ptr, kvasprintf, kmem_flags_convert(KM_SLEEP),
+		    fmt, aq);
 		va_end(aq);
 	} while (ptr == NULL);
 
@@ -96,7 +98,8 @@ kmem_asprintf(const char *fmt, ...)
 
 	do {
 		va_start(ap, fmt);
-		ptr = kvasprintf(kmem_flags_convert(KM_SLEEP), fmt, ap);
+		LINUX_API_CALL(ptr, kvasprintf, kmem_flags_convert(KM_SLEEP),
+		    fmt, ap);
 		va_end(ap);
 	} while (ptr == NULL);
 
@@ -111,7 +114,7 @@ __strdup(const char *str, int flags)
 	int n;
 
 	n = strlen(str);
-	ptr = kmalloc(n + 1, kmem_flags_convert(flags));
+	LINUX_API_CALL(ptr, kmalloc, n + 1, kmem_flags_convert(flags));
 	if (ptr)
 		memcpy(ptr, str, n + 1);
 
@@ -128,7 +131,7 @@ EXPORT_SYMBOL(strdup);
 void
 strfree(char *str)
 {
-	kfree(str);
+	LINUX_API_CALL_VOID(kfree, str);
 }
 EXPORT_SYMBOL(strfree);
 
@@ -189,18 +192,18 @@ spl_kmem_alloc_impl(size_t size, int flags, int node)
 			} else {
 				return (NULL);
 			}
-		} else {
-			ptr = kmalloc_node(size, lflags, node);
-		}
+		} else
+			LINUX_API_CALL(ptr, kmalloc_node, size, lflags, node);
 
-		if (likely(ptr) || (flags & KM_NOSLEEP))
+		if (likely(ptr) || (flags & KM_NOSLEEP)) {
 			return (ptr);
+		}
 
 		/*
 		 * For vmem_alloc() and vmem_zalloc() callers retry immediately
 		 * using spl_vmalloc() which is unlikely to fail.
 		 */
-		if ((flags & KM_VMEM) && (use_vmem == 0))  {
+		if ((flags & KM_VMEM) && (use_vmem == 0)) {
 			use_vmem = 1;
 			continue;
 		}
@@ -227,9 +230,9 @@ inline void
 spl_kmem_free_impl(const void *buf, size_t size)
 {
 	if (is_vmalloc_addr(buf))
-		vfree(buf);
+		LINUX_API_CALL_VOID(vfree, buf);
 	else
-		kfree(buf);
+		LINUX_API_CALL_VOID(kfree, buf);
 }
 
 /*
@@ -345,20 +348,21 @@ spl_kmem_alloc_track(size_t size, int flags,
 	kmem_debug_t *dptr;
 	unsigned long irq_flags;
 
-	dptr = kmalloc(sizeof (kmem_debug_t), kmem_flags_convert(flags));
+	LINUX_API_CALL(dptr, kmalloc, sizeof (kmem_debug_t),
+	    kmem_flags_convert(flags));
 	if (dptr == NULL)
 		return (NULL);
 
 	dptr->kd_func = __strdup(func, flags);
 	if (dptr->kd_func == NULL) {
-		kfree(dptr);
+		LINUX_API_CALL_VOID(kfree, dptr);
 		return (NULL);
 	}
 
 	ptr = spl_kmem_alloc_debug(size, flags, node);
 	if (ptr == NULL) {
-		kfree(dptr->kd_func);
-		kfree(dptr);
+		LINUX_API_CALL_VOID(kfree, dptr->kd_func);
+		LINUX_API_CALL_VOID(kfree, dptr);
 		return (NULL);
 	}
 
@@ -388,8 +392,8 @@ spl_kmem_free_track(const void *ptr, size_t size)
 	ASSERT3P(dptr, !=, NULL);
 	ASSERT3S(dptr->kd_size, ==, size);
 
-	kfree(dptr->kd_func);
-	kfree(dptr);
+	LINUX_API_CALL_VOID(kfree, dptr->kd_func);
+	LINUX_API_CALL_VOID(kfree, dptr);
 
 	spl_kmem_free_debug(ptr, size);
 }

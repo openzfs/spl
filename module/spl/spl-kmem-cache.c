@@ -27,6 +27,7 @@
 #include <sys/taskq.h>
 #include <sys/timer.h>
 #include <sys/vmem.h>
+#include <linux/api_compat.h>
 #include <linux/slab.h>
 #include <linux/swap.h>
 #include <linux/mm_compat.h>
@@ -199,7 +200,7 @@ kv_alloc(spl_kmem_cache_t *skc, int size, int flags)
 
 	if (skc->skc_flags & KMC_KMEM) {
 		ASSERT(ISP2(size));
-		ptr = (void *)__get_free_pages(lflags, get_order(size));
+		LINUX_API_CALL_TYPED(ptr, void *, __get_free_pages, lflags, get_order(size));
 	} else {
 		ptr = spl_vmalloc(size, lflags | __GFP_HIGHMEM, PAGE_KERNEL);
 	}
@@ -227,8 +228,9 @@ kv_free(spl_kmem_cache_t *skc, void *ptr, int size)
 
 	if (skc->skc_flags & KMC_KMEM) {
 		ASSERT(ISP2(size));
-		free_pages((unsigned long)ptr, get_order(size));
+		LINUX_API_CALL_VOID(free_pages, (unsigned long)ptr, get_order(size));
 	} else {
+		LINUX_API_CALL_VOID(vfree, ptr);
 		vfree(ptr);
 	}
 }
@@ -514,13 +516,13 @@ spl_emergency_alloc(spl_kmem_cache_t *skc, int flags, void **obj)
 	if (!empty)
 		return (-EEXIST);
 
-	ske = kmalloc(sizeof (*ske), lflags);
+	LINUX_API_CALL(ske, kmalloc, sizeof (*ske), lflags);
 	if (ske == NULL)
 		return (-ENOMEM);
 
-	ske->ske_obj = __get_free_pages(lflags, order);
+	LINUX_API_CALL(ske->ske_obj, __get_free_pages, lflags, order);
 	if (ske->ske_obj == 0) {
-		kfree(ske);
+		LINUX_API_CALL_VOID(kfree, ske);
 		return (-ENOMEM);
 	}
 
@@ -535,8 +537,8 @@ spl_emergency_alloc(spl_kmem_cache_t *skc, int flags, void **obj)
 	spin_unlock(&skc->skc_lock);
 
 	if (unlikely(!empty)) {
-		free_pages(ske->ske_obj, order);
-		kfree(ske);
+		LINUX_API_CALL_VOID(free_pages, ske->ske_obj, order);
+		LINUX_API_CALL_VOID(kfree, ske);
 		return (-EINVAL);
 	}
 
@@ -566,8 +568,8 @@ spl_emergency_free(spl_kmem_cache_t *skc, void *obj)
 	if (ske == NULL)
 		return (-ENOENT);
 
-	free_pages(ske->ske_obj, order);
-	kfree(ske);
+	LINUX_API_CALL_VOID(free_pages, ske->ske_obj, order);
+	LINUX_API_CALL_VOID(kfree, ske);
 
 	return (0);
 }
@@ -770,7 +772,7 @@ spl_magazine_alloc(spl_kmem_cache_t *skc, int cpu)
 	int size = sizeof (spl_kmem_magazine_t) +
 	    sizeof (void *) * skc->skc_mag_size;
 
-	skm = kmalloc_node(size, GFP_KERNEL, cpu_to_node(cpu));
+	LINUX_API_CALL(skm, kmalloc_node, size, GFP_KERNEL, cpu_to_node(cpu));
 	if (skm) {
 		skm->skm_magic = SKM_MAGIC;
 		skm->skm_avail = 0;
@@ -792,7 +794,7 @@ spl_magazine_free(spl_kmem_magazine_t *skm)
 {
 	ASSERT(skm->skm_magic == SKM_MAGIC);
 	ASSERT(skm->skm_avail == 0);
-	kfree(skm);
+	LINUX_API_CALL_VOID(kfree, skm);
 }
 
 /*
@@ -806,7 +808,7 @@ spl_magazine_create(spl_kmem_cache_t *skc)
 	if (skc->skc_flags & KMC_NOMAGAZINE)
 		return (0);
 
-	skc->skc_mag = kzalloc(sizeof (spl_kmem_magazine_t *) *
+	LINUX_API_CALL(skc->skc_mag, kzalloc, sizeof (spl_kmem_magazine_t *) *
 	    num_possible_cpus(), kmem_flags_convert(KM_SLEEP));
 	skc->skc_mag_size = spl_magazine_size(skc);
 	skc->skc_mag_refill = (skc->skc_mag_size + 1) / 2;
@@ -817,7 +819,7 @@ spl_magazine_create(spl_kmem_cache_t *skc)
 			for (i--; i >= 0; i--)
 				spl_magazine_free(skc->skc_mag[i]);
 
-			kfree(skc->skc_mag);
+			LINUX_API_CALL_VOID(kfree, skc->skc_mag);
 			return (-ENOMEM);
 		}
 	}
@@ -843,7 +845,7 @@ spl_magazine_destroy(spl_kmem_cache_t *skc)
 		spl_magazine_free(skm);
 	}
 
-	kfree(skc->skc_mag);
+	LINUX_API_CALL_VOID(kfree, skc->skc_mag);
 }
 
 /*
@@ -886,15 +888,15 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 
 	might_sleep();
 
-	skc = kzalloc(sizeof (*skc), lflags);
+	LINUX_API_CALL(skc, kzalloc, sizeof (*skc), lflags);
 	if (skc == NULL)
 		return (NULL);
 
 	skc->skc_magic = SKC_MAGIC;
 	skc->skc_name_size = strlen(name) + 1;
-	skc->skc_name = (char *)kmalloc(skc->skc_name_size, lflags);
+	LINUX_API_CALL_TYPED(skc->skc_name, char *, kmalloc, skc->skc_name_size, lflags);
 	if (skc->skc_name == NULL) {
-		kfree(skc);
+		LINUX_API_CALL_VOID(kfree, skc);
 		return (NULL);
 	}
 	strncpy(skc->skc_name, name, skc->skc_name_size);
@@ -1001,7 +1003,7 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 		slabflags |= SLAB_USERCOPY;
 #endif
 
-		skc->skc_linux_cache = kmem_cache_create(
+		LINUX_API_CALL(skc->skc_linux_cache, kmem_cache_create,
 		    skc->skc_name, size, align, slabflags, NULL);
 		if (skc->skc_linux_cache == NULL) {
 			rc = ENOMEM;
@@ -1027,8 +1029,8 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 
 	return (skc);
 out:
-	kfree(skc->skc_name);
-	kfree(skc);
+	LINUX_API_CALL_VOID(kfree, skc->skc_name);
+	LINUX_API_CALL_VOID(kfree, skc);
 	return (NULL);
 }
 EXPORT_SYMBOL(spl_kmem_cache_create);
@@ -1082,7 +1084,7 @@ spl_kmem_cache_destroy(spl_kmem_cache_t *skc)
 		spl_slab_reclaim(skc);
 	} else {
 		ASSERT(skc->skc_flags & KMC_SLAB);
-		kmem_cache_destroy(skc->skc_linux_cache);
+		LINUX_API_CALL_VOID(kmem_cache_destroy, skc->skc_linux_cache);
 	}
 
 	spin_lock(&skc->skc_lock);
@@ -1100,8 +1102,8 @@ spl_kmem_cache_destroy(spl_kmem_cache_t *skc)
 
 	spin_unlock(&skc->skc_lock);
 
-	kfree(skc->skc_name);
-	kfree(skc);
+	LINUX_API_CALL_VOID(kfree, skc->skc_name);
+	LINUX_API_CALL_VOID(kfree, skc);
 }
 EXPORT_SYMBOL(spl_kmem_cache_destroy);
 
@@ -1180,7 +1182,7 @@ spl_cache_grow_work(void *data)
 	wake_up_all(&skc->skc_waitq);
 	spin_unlock(&skc->skc_lock);
 
-	kfree(ska);
+	LINUX_API_CALL_VOID(kfree, ska);
 }
 
 /*
@@ -1227,7 +1229,8 @@ spl_cache_grow(spl_kmem_cache_t *skc, int flags, void **obj)
 	if (test_and_set_bit(KMC_BIT_GROWING, &skc->skc_flags) == 0) {
 		spl_kmem_alloc_t *ska;
 
-		ska = kmalloc(sizeof (*ska), kmem_flags_convert(flags));
+		LINUX_API_CALL(ska, kmalloc, sizeof (*ska),
+		    kmem_flags_convert(flags));
 		if (ska == NULL) {
 			clear_bit_unlock(KMC_BIT_GROWING, &skc->skc_flags);
 			smp_mb__after_atomic();
@@ -1413,6 +1416,7 @@ spl_kmem_cache_alloc(spl_kmem_cache_t *skc, int flags)
 	ASSERT(skc->skc_magic == SKC_MAGIC);
 	ASSERT(!test_bit(KMC_BIT_DESTROY, &skc->skc_flags));
 
+
 	/*
 	 * Allocate directly from a Linux slab.  All optimizations are left
 	 * to the underlying cache we only need to guarantee that KM_SLEEP
@@ -1421,7 +1425,8 @@ spl_kmem_cache_alloc(spl_kmem_cache_t *skc, int flags)
 	if (skc->skc_flags & KMC_SLAB) {
 		struct kmem_cache *slc = skc->skc_linux_cache;
 		do {
-			obj = kmem_cache_alloc(slc, kmem_flags_convert(flags));
+			LINUX_API_CALL(obj, kmem_cache_alloc, slc,
+			    kmem_flags_convert(flags));
 		} while ((obj == NULL) && !(flags & KM_NOSLEEP));
 
 		goto ret;
@@ -1496,7 +1501,7 @@ spl_kmem_cache_free(spl_kmem_cache_t *skc, void *obj)
 	 * Free the object from the Linux underlying Linux slab.
 	 */
 	if (skc->skc_flags & KMC_SLAB) {
-		kmem_cache_free(skc->skc_linux_cache, obj);
+		LINUX_API_CALL_VOID(kmem_cache_free, skc->skc_linux_cache, obj);
 		return;
 	}
 
@@ -1543,6 +1548,7 @@ spl_kmem_cache_free(spl_kmem_cache_t *skc, void *obj)
 
 	if (do_reclaim)
 		spl_slab_reclaim(skc);
+
 }
 EXPORT_SYMBOL(spl_kmem_cache_free);
 

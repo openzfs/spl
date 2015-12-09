@@ -25,6 +25,7 @@
 \*****************************************************************************/
 
 #include <sys/kobj.h>
+#include <linux/api_compat.h>
 
 struct _buf *
 kobj_open_file(const char *name)
@@ -33,12 +34,12 @@ kobj_open_file(const char *name)
 	vnode_t *vp;
 	int rc;
 
-	file = kmalloc(sizeof(_buf_t), kmem_flags_convert(KM_SLEEP));
+	LINUX_API_CALL(file, kmalloc,sizeof(_buf_t), kmem_flags_convert(KM_SLEEP));
 	if (file == NULL)
 		return ((_buf_t *)-1UL);
 
 	if ((rc = vn_open(name, UIO_SYSSPACE, FREAD, 0644, &vp, 0, 0))) {
-		kfree(file);
+		LINUX_API_CALL_VOID(kfree, file);
 		return ((_buf_t *)-1UL);
 	}
 
@@ -52,7 +53,7 @@ void
 kobj_close_file(struct _buf *file)
 {
 	VOP_CLOSE(file->vp, 0, 0, 0, 0, 0);
-        kfree(file);
+	LINUX_API_CALL_VOID(kfree, file);
 } /* kobj_close_file() */
 EXPORT_SYMBOL(kobj_close_file);
 

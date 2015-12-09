@@ -142,7 +142,10 @@ spl_kthread_create(int (*func)(void *), void *data, const char namefmt[], ...)
 	vsnprintf(name, sizeof(name), namefmt, args);
 	va_end(args);
 	do {
+		void *journal_info = current->journal_info;
+		current->journal_info = NULL;
 		tsk = kthread_create(func, data, "%s", name);
+		current->journal_info = journal_info;
 		if (IS_ERR(tsk)) {
 			if (signal_pending(current)) {
 				clear_thread_flag(TIF_SIGPENDING);

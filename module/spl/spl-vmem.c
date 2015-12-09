@@ -24,6 +24,7 @@
 
 #include <sys/debug.h>
 #include <sys/vmem.h>
+#include <linux/api_compat.h>
 #include <linux/mm_compat.h>
 #include <linux/module.h>
 
@@ -103,22 +104,22 @@ EXPORT_SYMBOL(spl_vmem_free);
 void *
 spl_vmalloc(unsigned long size, gfp_t lflags, pgprot_t prot)
 {
-#if defined(PF_MEMALLOC_NOIO)
 	void *ptr;
+#if defined(PF_MEMALLOC_NOIO)
 	unsigned noio_flag = 0;
 
 	if (spl_fstrans_check())
 		noio_flag = memalloc_noio_save();
 
-	ptr =  __vmalloc(size, lflags, prot);
+	LINUX_API_CALL(ptr, __vmalloc, size, lflags, prot);
 
 	if (spl_fstrans_check())
 		memalloc_noio_restore(noio_flag);
 
-	return (ptr);
 #else
-	return (__vmalloc(size, lflags, prot));
+	LINUX_API_CALL(ptr, __vmalloc, size, lflags, prot);
 #endif
+	return (ptr);
 }
 EXPORT_SYMBOL(spl_vmalloc);
 

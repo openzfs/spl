@@ -673,16 +673,20 @@ AC_DEFUN([SPL_AC_TEST_MODULE],
 		fi
 	])
 
-	AC_RUN_IFELSE([
-		AC_LANG_PROGRAM([
-			#include "$LINUX/include/linux/license.h"
-		], [
-			return !license_is_gpl_compatible("$SPL_META_LICENSE");
-		])
+	AC_MSG_CHECKING([whether spl license is GPL compatible])
+	SPL_LINUX_TRY_COMPILE([
+		#include <linux/kernel.h>
+		#include <linux/string.h>
+		#include <linux/license.h>
+		#include <linux/bug.h>
+	], [
+		BUILD_BUG_ON(!license_is_gpl_compatible("$SPL_META_LICENSE"));
 	], [
 		AC_DEFINE([SPL_IS_GPL_COMPATIBLE], [1],
 		    [Define to 1 if GPL-only symbols can be used])
+		AC_MSG_RESULT(yes)
 	], [
+		AC_MSG_RESULT(no)
 	])
 ])
 

@@ -1,6 +1,7 @@
 COMMON_H =
 
 KERNEL_H = \
+	$(top_srcdir)/include/linux/api_compat.h \
 	$(top_srcdir)/include/linux/bitops_compat.h \
 	$(top_srcdir)/include/linux/compiler_compat.h \
 	$(top_srcdir)/include/linux/delay_compat.h \

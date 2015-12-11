@@ -27,6 +27,7 @@
 #include <sys/cred.h>
 #include <sys/vnode.h>
 #include <sys/kmem_cache.h>
+#include <linux/api_compat.h>
 #include <linux/falloc.h>
 #include <linux/file_compat.h>
 
@@ -157,9 +158,9 @@ vn_open(const char *path, uio_seg_t seg, int flags, int mode,
 		return (-PTR_ERR(fp));
 
 #ifdef HAVE_2ARGS_VFS_GETATTR
-	rc = vfs_getattr(&fp->f_path, &stat);
+	LINUX_API_CALL(rc, vfs_getattr, &fp->f_path, &stat);
 #else
-	rc = vfs_getattr(fp->f_path.mnt, fp->f_dentry, &stat);
+	LINUX_API_CALL(rc, vfs_getattr, fp->f_path.mnt, fp->f_dentry, &stat);
 #endif
 	if (rc) {
 		filp_close(fp, 0);
@@ -191,19 +192,20 @@ vn_openat(const char *path, uio_seg_t seg, int flags, int mode,
 	  vnode_t **vpp, int x1, void *x2, vnode_t *vp, int fd)
 {
 	char *realpath;
-	int len, rc;
+	int len, rc = ENOMEM;
 
 	ASSERT(vp == rootdir);
 
 	len = strlen(path) + 2;
-	realpath = kmalloc(len, kmem_flags_convert(KM_SLEEP));
+	LINUX_API_CALL(realpath, kmalloc, len, kmem_flags_convert(KM_SLEEP));
 	if (!realpath)
-		return (ENOMEM);
+		goto ret;
 
 	(void)snprintf(realpath, len, "/%s", path);
 	rc = vn_open(realpath, seg, flags, mode, vpp, x1, x2);
-	kfree(realpath);
+	LINUX_API_CALL_VOID(kfree, realpath);
 
+ret:
 	return (rc);
 } /* vn_openat() */
 EXPORT_SYMBOL(vn_openat);
@@ -237,9 +239,9 @@ vn_rdwr(uio_rw_t uio, vnode_t *vp, void *addr, ssize_t len, offset_t off,
         set_fs(get_ds());
 
 	if (uio & UIO_WRITE)
-		rc = vfs_write(fp, addr, len, &offset);
+		LINUX_API_CALL(rc, vfs_write, fp, addr, len, &offset);
 	else
-		rc = vfs_read(fp, addr, len, &offset);
+		LINUX_API_CALL(rc, vfs_read, fp, addr, len, &offset);
 
 	set_fs(saved_fs);
 	fp->f_pos = offset;
@@ -395,9 +397,9 @@ vn_remove(const char *path, uio_seg_t seg, int flags)
 		}
 
 #ifdef HAVE_2ARGS_VFS_UNLINK
-		rc = vfs_unlink(parent.dentry->d_inode, dentry);
+		LINUX_API_CALL(rc, vfs_unlink, parent.dentry->d_inode, dentry);
 #else
-		rc = vfs_unlink(parent.dentry->d_inode, dentry, NULL);
+		LINUX_API_CALL(rc, vfs_unlink, parent.dentry->d_inode, dentry, NULL);
 #endif /* HAVE_2ARGS_VFS_UNLINK */
 exit1:
 		dput(dentry);
@@ -478,13 +480,13 @@ vn_rename(const char *oldname, const char *newname, int x1)
 	}
 
 #if defined(HAVE_4ARGS_VFS_RENAME)
-	rc = vfs_rename(old_dir->d_inode, old_dentry,
+	LINUX_API_CALL(rc, vfs_rename, old_dir->d_inode, old_dentry,
 	    new_dir->d_inode, new_dentry);
 #elif defined(HAVE_5ARGS_VFS_RENAME)
-	rc = vfs_rename(old_dir->d_inode, old_dentry,
+	LINUX_API_CALL(rc, vfs_rename, old_dir->d_inode, old_dentry,
 	    new_dir->d_inode, new_dentry, NULL);
 #else
-	rc = vfs_rename(old_dir->d_inode, old_dentry,
+	LINUX_API_CALL(rc, vfs_rename, old_dir->d_inode, old_dentry,
 	    new_dir->d_inode, new_dentry, NULL, 0);
 #endif
 exit4:
@@ -514,9 +516,9 @@ vn_getattr(vnode_t *vp, vattr_t *vap, int flags, void *x3, void *x4)
 	fp = vp->v_file;
 
 #ifdef HAVE_2ARGS_VFS_GETATTR
-	rc = vfs_getattr(&fp->f_path, &stat);
+	LINUX_API_CALL(rc, vfs_getattr, &fp->f_path, &stat);
 #else
-	rc = vfs_getattr(fp->f_path.mnt, fp->f_dentry, &stat);
+	LINUX_API_CALL(rc, vfs_getattr, fp->f_path.mnt, fp->f_dentry, &stat);
 #endif
 	if (rc)
 		return (-rc);
@@ -697,9 +699,9 @@ vn_getf(int fd)
 		goto out_fget;
 
 #ifdef HAVE_2ARGS_VFS_GETATTR
-	rc = vfs_getattr(&lfp->f_path, &stat);
+	LINUX_API_CALL(rc, vfs_getattr, &lfp->f_path, &stat);
 #else
-	rc = vfs_getattr(lfp->f_path.mnt, lfp->f_dentry, &stat);
+	LINUX_API_CALL(rc, vfs_getattr, lfp->f_path.mnt, lfp->f_dentry, &stat);
 #endif
         if (rc)
 		goto out_vnode;

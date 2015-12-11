@@ -27,6 +27,7 @@
 #include <sys/thread.h>
 #include <sys/kmem.h>
 #include <sys/tsd.h>
+#include <linux/api_compat.h>
 
 /*
  * Thread interfaces
@@ -142,7 +143,9 @@ spl_kthread_create(int (*func)(void *), void *data, const char namefmt[], ...)
 	vsnprintf(name, sizeof(name), namefmt, args);
 	va_end(args);
 	do {
+		api_cookie_t cookie = spl_api_mark();
 		tsk = kthread_create(func, data, "%s", name);
+		spl_api_unmark(cookie);
 		if (IS_ERR(tsk)) {
 			if (signal_pending(current)) {
 				clear_thread_flag(TIF_SIGPENDING);

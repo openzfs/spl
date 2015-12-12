@@ -673,17 +673,19 @@ AC_DEFUN([SPL_AC_TEST_MODULE],
 		fi
 	])
 
-	AC_RUN_IFELSE([
-		AC_LANG_PROGRAM([
-			#include "$LINUX/include/linux/license.h"
+	if test "x$cross_compiling" != xyes; then
+		AC_RUN_IFELSE([
+			AC_LANG_PROGRAM([
+				#include "$LINUX/include/linux/license.h"
+			], [
+				return !license_is_gpl_compatible("$SPL_META_LICENSE");
+			])
 		], [
-			return !license_is_gpl_compatible("$SPL_META_LICENSE");
+			AC_DEFINE([SPL_IS_GPL_COMPATIBLE], [1],
+			    [Define to 1 if GPL-only symbols can be used])
+		], [
 		])
-	], [
-		AC_DEFINE([SPL_IS_GPL_COMPATIBLE], [1],
-		    [Define to 1 if GPL-only symbols can be used])
-	], [
-	])
+	fi
 ])
 
 dnl #

@@ -1,4 +1,4 @@
-SUBDIRS = fm fs sysevent crypto
+SUBDIRS = fm fs sysevent
 
 COMMON_H =
 

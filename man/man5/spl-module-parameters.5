@@ -253,6 +253,21 @@ Default value: \fB/etc/hostid\fR
 .sp
 .ne 2
 .na
+\fBspl_taskq_kick\fR (uint)
+.ad
+.RS 12n
+Kick stuck taskq to spawn threads. When writing non-zero value to it, it will
+scan all the taskqs. If any of them has a pending task of more than 5 seconds
+old, it will kick it to spawn more thread. This is used when you found a rare
+deadlock occurs because of one or more taskqs didn't spawn a thread when it
+should.
+.sp
+Default value: \fB0\fR
+.RE
+
+.sp
+.ne 2
+.na
 \fBspl_taskq_thread_bind\fR (int)
 .ad
 .RS 12n

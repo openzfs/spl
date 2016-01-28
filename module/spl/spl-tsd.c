@@ -102,19 +102,20 @@ tsd_hash_search(tsd_hash_table_t *table, uint_t key, pid_t pid)
 	tsd_hash_entry_t *entry;
 	tsd_hash_bin_t *bin;
 	ulong_t hash;
+	unsigned long flags;
 
 	hash = hash_long((ulong_t)key * (ulong_t)pid, table->ht_bits);
 	bin = &table->ht_bins[hash];
-	spin_lock(&bin->hb_lock);
+	spin_lock_irqsave(&bin->hb_lock, flags);
 	hlist_for_each(node, &bin->hb_head) {
 		entry = list_entry(node, tsd_hash_entry_t, he_list);
 		if ((entry->he_key == key) && (entry->he_pid == pid)) {
-			spin_unlock(&bin->hb_lock);
+			spin_unlock_irqrestore(&bin->hb_lock, flags);
 			return (entry);
 		}
 	}
 
-	spin_unlock(&bin->hb_lock);
+	spin_unlock_irqrestore(&bin->hb_lock, flags);
 	return (NULL);
 }
 
@@ -160,6 +161,7 @@ tsd_hash_add(tsd_hash_table_t *table, uint_t key, pid_t pid, void *value)
 	tsd_hash_bin_t *bin;
 	ulong_t hash;
 	int rc = 0;
+	unsigned long flags;
 
 	ASSERT3P(tsd_hash_search(table, key, pid), ==, NULL);
 
@@ -175,7 +177,7 @@ tsd_hash_add(tsd_hash_table_t *table, uint_t key, pid_t pid, void *value)
 	INIT_LIST_HEAD(&entry->he_key_list);
 	INIT_LIST_HEAD(&entry->he_pid_list);
 
-	spin_lock(&table->ht_lock);
+	spin_lock_irqsave(&table->ht_lock, flags);
 
 	/* Destructor entry must exist for all valid keys */
 	dtor_entry = tsd_hash_search(table, entry->he_key, DTOR_PID);
@@ -196,7 +198,7 @@ tsd_hash_add(tsd_hash_table_t *table, uint_t key, pid_t pid, void *value)
 	list_add(&entry->he_pid_list, &pid_entry->he_pid_list);
 
 	spin_unlock(&bin->hb_lock);
-	spin_unlock(&table->ht_lock);
+	spin_unlock_irqrestore(&table->ht_lock, flags);
 
 	return (rc);
 }
@@ -219,6 +221,7 @@ tsd_hash_add_key(tsd_hash_table_t *table, uint_t *keyp, dtor_func_t dtor)
 	tsd_hash_bin_t *bin;
 	ulong_t hash;
 	int keys_checked = 0;
+	unsigned long flags;
 
 	ASSERT3P(table, !=, NULL);
 
@@ -228,7 +231,7 @@ tsd_hash_add_key(tsd_hash_table_t *table, uint_t *keyp, dtor_func_t dtor)
 		return (ENOMEM);
 
 	/* Determine next available key value */
-	spin_lock(&table->ht_lock);
+	spin_lock_irqsave(&table->ht_lock, flags);
 	do {
 		/* Limited to TSD_KEYS_MAX concurrent unique keys */
 		if (table->ht_key++ > TSD_KEYS_MAX)
@@ -236,7 +239,7 @@ tsd_hash_add_key(tsd_hash_table_t *table, uint_t *keyp, dtor_func_t dtor)
 
 		/* Ensure failure when all TSD_KEYS_MAX keys are in use */
 		if (keys_checked++ >= TSD_KEYS_MAX) {
-			spin_unlock(&table->ht_lock);
+			spin_unlock_irqrestore(&table->ht_lock, flags);
 			return (ENOENT);
 		}
 
@@ -259,7 +262,7 @@ tsd_hash_add_key(tsd_hash_table_t *table, uint_t *keyp, dtor_func_t dtor)
 	hlist_add_head(&entry->he_list, &bin->hb_head);
 
 	spin_unlock(&bin->hb_lock);
-	spin_unlock(&table->ht_lock);
+	spin_unlock_irqrestore(&table->ht_lock, flags);
 
 	return (0);
 }
@@ -279,13 +282,14 @@ tsd_hash_add_pid(tsd_hash_table_t *table, pid_t pid)
 	tsd_hash_entry_t *entry;
 	tsd_hash_bin_t *bin;
 	ulong_t hash;
+	unsigned long flags;
 
 	/* Allocate entry to be used as the process reference */
 	entry = kmem_alloc(sizeof (tsd_hash_entry_t), KM_PUSHPAGE);
 	if (entry == NULL)
 		return (ENOMEM);
 
-	spin_lock(&table->ht_lock);
+	spin_lock_irqsave(&table->ht_lock, flags);
 	entry->he_key = PID_KEY;
 	entry->he_pid = pid;
 	entry->he_dtor = NULL;
@@ -301,7 +305,7 @@ tsd_hash_add_pid(tsd_hash_table_t *table, pid_t pid)
 	hlist_add_head(&entry->he_list, &bin->hb_head);
 
 	spin_unlock(&bin->hb_lock);
-	spin_unlock(&table->ht_lock);
+	spin_unlock_irqrestore(&table->ht_lock, flags);
 
 	return (0);
 }
@@ -371,9 +375,10 @@ tsd_hash_table_fini(tsd_hash_table_t *table)
 	tsd_hash_bin_t *bin;
 	tsd_hash_entry_t *entry;
 	int size, i;
+	unsigned long flags;
 
 	ASSERT3P(table, !=, NULL);
-	spin_lock(&table->ht_lock);
+	spin_lock_irqsave(&table->ht_lock, flags);
 	for (i = 0, size = (1 << table->ht_bits); i < size; i++) {
 		bin = &table->ht_bins[i];
 		spin_lock(&bin->hb_lock);
@@ -385,7 +390,7 @@ tsd_hash_table_fini(tsd_hash_table_t *table)
 		}
 		spin_unlock(&bin->hb_lock);
 	}
-	spin_unlock(&table->ht_lock);
+	spin_unlock_irqrestore(&table->ht_lock, flags);
 
 	tsd_hash_dtor(&work);
 	kmem_free(table->ht_bins, sizeof (tsd_hash_bin_t)*(1<<table->ht_bits));
@@ -407,12 +412,13 @@ tsd_remove_entry(tsd_hash_entry_t *entry)
 	tsd_hash_entry_t *pid_entry;
 	tsd_hash_bin_t *pid_entry_bin, *entry_bin;
 	ulong_t hash;
+	unsigned long flags;
 
 	table = tsd_hash_table;
 	ASSERT3P(table, !=, NULL);
 	ASSERT3P(entry, !=, NULL);
 
-	spin_lock(&table->ht_lock);
+	spin_lock_irqsave(&table->ht_lock, flags);
 
 	hash = hash_long((ulong_t)entry->he_key *
 	    (ulong_t)entry->he_pid, table->ht_bits);
@@ -441,7 +447,7 @@ tsd_remove_entry(tsd_hash_entry_t *entry)
 		spin_unlock(&pid_entry_bin->hb_lock);
 	}
 
-	spin_unlock(&table->ht_lock);
+	spin_unlock_irqrestore(&table->ht_lock, flags);
 
 	tsd_hash_dtor(&work);
 }
@@ -594,14 +600,15 @@ tsd_destroy(uint_t *keyp)
 	tsd_hash_entry_t *dtor_entry, *entry;
 	tsd_hash_bin_t *dtor_entry_bin, *entry_bin;
 	ulong_t hash;
+	unsigned long flags;
 
 	table = tsd_hash_table;
 	ASSERT3P(table, !=, NULL);
 
-	spin_lock(&table->ht_lock);
+	spin_lock_irqsave(&table->ht_lock, flags);
 	dtor_entry = tsd_hash_search(table, *keyp, DTOR_PID);
 	if (dtor_entry == NULL) {
-		spin_unlock(&table->ht_lock);
+		spin_unlock_irqrestore(&table->ht_lock, flags);
 		return;
 	}
 
@@ -634,7 +641,7 @@ tsd_destroy(uint_t *keyp)
 	tsd_hash_del(table, dtor_entry);
 	hlist_add_head(&dtor_entry->he_list, &work);
 	spin_unlock(&dtor_entry_bin->hb_lock);
-	spin_unlock(&table->ht_lock);
+	spin_unlock_irqrestore(&table->ht_lock, flags);
 
 	tsd_hash_dtor(&work);
 	*keyp = 0;
@@ -657,14 +664,15 @@ tsd_exit(void)
 	tsd_hash_entry_t *pid_entry, *entry;
 	tsd_hash_bin_t *pid_entry_bin, *entry_bin;
 	ulong_t hash;
+	unsigned long flags;
 
 	table = tsd_hash_table;
 	ASSERT3P(table, !=, NULL);
 
-	spin_lock(&table->ht_lock);
+	spin_lock_irqsave(&table->ht_lock, flags);
 	pid_entry = tsd_hash_search(table, PID_KEY, curthread->pid);
 	if (pid_entry == NULL) {
-		spin_unlock(&table->ht_lock);
+		spin_unlock_irqrestore(&table->ht_lock, flags);
 		return;
 	}
 
@@ -697,7 +705,7 @@ tsd_exit(void)
 	tsd_hash_del(table, pid_entry);
 	hlist_add_head(&pid_entry->he_list, &work);
 	spin_unlock(&pid_entry_bin->hb_lock);
-	spin_unlock(&table->ht_lock);
+	spin_unlock_irqrestore(&table->ht_lock, flags);
 
 	tsd_hash_dtor(&work);
 }

@@ -25,6 +25,13 @@ Makefile
 Makefile.in
 
 #
+# Eclipse rules - REMOVE BEFORE SUBMITTING
+#
+.settings/
+.cproject
+.project
+
+#
 # Top level generated files specific to this top level dir
 #
 /configure

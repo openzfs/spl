@@ -43,4 +43,7 @@
 #define BE_IN32(xa) \
 	(((uint32_t)BE_IN16(xa) << 16) | BE_IN16((uint8_t *)(xa)+2))
 
+#define ntohll(x) be64_to_cpu(x)
+#define htonll(x) cpu_to_be64(x)
+
 #endif /* SPL_BYTEORDER_H */

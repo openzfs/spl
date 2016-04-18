@@ -571,6 +571,7 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
     offset_t offset, void *x6, void *x7)
 {
 	int error = EOPNOTSUPP;
+	int fstrans;
 
 	if (cmd != F_FREESP || bfp->l_whence != 0)
 		return (EOPNOTSUPP);
@@ -578,6 +579,11 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	ASSERT(vp);
 	ASSERT(vp->v_file);
 	ASSERT(bfp->l_start >= 0 && bfp->l_len > 0);
+
+	fstrans = spl_fstrans_check();
+	if (fstrans)
+		current->flags &= ~(PF_FSTRANS);
+
 
 #ifdef FALLOC_FL_PUNCH_HOLE
 	/*
@@ -588,7 +594,7 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 	    FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
 	    bfp->l_start, bfp->l_len);
 	if (error == 0)
-		return (0);
+		goto out;
 #endif
 
 #ifdef HAVE_INODE_TRUNCATE_RANGE
@@ -603,8 +609,10 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 		 */
 		if (end % PAGE_SIZE != 0) {
 			end &= ~(off_t)(PAGE_SIZE - 1);
-			if (end <= bfp->l_start)
-				return (0);
+			if (end <= bfp->l_start) {
+				error = 0;
+				goto out;
+			}
 		}
 		--end;
 
@@ -612,9 +620,14 @@ int vn_space(vnode_t *vp, int cmd, struct flock *bfp, int flag,
 			vp->v_file->f_dentry->d_inode,
 			bfp->l_start, end
 		);
-		return (0);
+		error = 0;
+		goto out;
 	}
 #endif
+
+out:
+	if (fstrans)
+		current->flags |= PF_FSTRANS;
 
 	return (error);
 }

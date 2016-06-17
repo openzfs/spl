@@ -25,175 +25,135 @@
 #ifndef	_SPL_ISA_DEFS_H
 #define	_SPL_ISA_DEFS_H
 
-/* x86_64 arch specific defines */
-#if defined(__x86_64) || defined(__x86_64__)
+/*****************************************************************************\
+ *  If the compiler is already defining _LP64 or _ILP32 (but not both), we
+ *  should trust the compiler.
+\*****************************************************************************/
 
-#if !defined(__x86_64)
-#define __x86_64
-#endif
+#if !(defined(_ILP32) && !defined(_LP64)) \
+ && !(!defined(_ILP32) && defined(_LP64))
 
-#if !defined(__amd64)
-#define __amd64
-#endif
-
-#if !defined(__x86)
-#define __x86
-#endif
-
-#if !defined(_LP64)
-#define _LP64
-#endif
-
-/* i386 arch specific defines */
-#elif defined(__i386) || defined(__i386__)
-
-#if !defined(__i386)
-#define __i386
-#endif
-
-#if !defined(__x86)
-#define __x86
-#endif
-
-#if !defined(_ILP32)
-#define _ILP32
-#endif
-
-/* powerpc (ppc64) arch specific defines */
-#elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__)
-
-#if !defined(__powerpc)
-#define __powerpc
-#endif
-
-#if !defined(__powerpc__)
-#define __powerpc__
-#endif
-
-#if defined(__powerpc64__)
-#if !defined(_LP64)
-#define _LP64
-#endif
-#else
-#if !defined(_ILP32)
-#define _ILP32
-#endif
-#endif
-
-/* arm arch specific defines */
-#elif defined(__arm) || defined(__arm__) || defined(__aarch64__)
-
-#if !defined(__arm)
-#define __arm
-#endif
-
-#if !defined(__arm__)
-#define __arm__
-#endif
-
-#if defined(__aarch64__)
-#if !defined(_LP64)
-#define _LP64
-#endif
-#else
-#if !defined(_ILP32)
-#define _ILP32
-#endif
-#endif
-
-#if defined(__ARMEL__) || defined(__AARCH64EL__)
-#define _LITTLE_ENDIAN
-#else
-#define _BIG_ENDIAN
-#endif
-
-/* sparc arch specific defines */
-#elif defined(__sparc) || defined(__sparc__)
-
-#if !defined(__sparc)
-#define __sparc
-#endif
-
-#if !defined(__sparc__)
-#define __sparc__
+#if defined(_ILP32) && defined(_LP64)
+#error "Both _ILP32 and _LP64 are defined!"
 #endif
 
 #if defined(__arch64__)
-#if !defined(_LP64)
 #define _LP64
-#endif
 #else
-#if !defined(_ILP32)
 #define _ILP32
-#endif
-#endif
-
-#define _BIG_ENDIAN
-#define _SUNOS_VTOC_16
-
-/* s390 arch specific defines */
-#elif defined(__s390__)
-#if defined(__s390x__)
-#if !defined(_LP64)
-#define	_LP64
-#endif
-#else
-#if !defined(_ILP32)
-#define	_ILP32
-#endif
-#endif
-
-#define	_BIG_ENDIAN
-
-/* MIPS arch specific defines */
-#elif defined(__mips__)
-
-#if defined(__MIPSEB__)
-#define	_BIG_ENDIAN
-#elif defined(__MIPSEL__)
-#define	_LITTLE_ENDIAN
-#else
-#error MIPS no endian specified
-#endif
-
-#ifndef _LP64
-#define	_ILP32
-#endif
-
-#define	_SUNOS_VTOC_16
-
-#else
-/*
- * Currently supported:
- * x86_64, i386, arm, powerpc, s390, sparc, and mips
- */
-#error "Unsupported ISA type"
-#endif
-
-#if defined(_ILP32) && defined(_LP64)
-#error "Both _ILP32 and _LP64 are defined"
 #endif
 
 #if !defined(_ILP32) && !defined(_LP64)
-#error "Neither _ILP32 or _LP64 are defined"
+#error "Neither _ILP32 or _LP64 are defined!"
+#endif
 #endif
 
-#include <sys/byteorder.h>
+/*****************************************************************************\
+ *  If the compiler is already defining *BIG_ENDIAN or *LITTLE_ENDIAN
+ *  (but not both), we should trust the compiler.
+\*****************************************************************************/
 
-#if defined(__LITTLE_ENDIAN) && !defined(_LITTLE_ENDIAN)
-#define _LITTLE_ENDIAN __LITTLE_ENDIAN
-#endif
-
-#if defined(__BIG_ENDIAN) && !defined(_BIG_ENDIAN)
-#define _BIG_ENDIAN __BIG_ENDIAN
-#endif
+#if !((defined(__LITTLE_ENDIAN) && !defined(__BIG_ENDIAN)) \
+ && !(!defined(__LITTLE_ENDIAN) && defined(__BIG_ENDIAN))) \
+ || !((defined(_LITTLE_ENDIAN) && !defined(_BIG_ENDIAN)) \
+ && !(!defined(_LITTLE_ENDIAN) && defined(_BIG_ENDIAN)))
 
 #if defined(_LITTLE_ENDIAN) && defined(_BIG_ENDIAN)
-#error "Both _LITTLE_ENDIAN and _BIG_ENDIAN are defined"
+#error "Both _LITTLE_ENDIAN and _BIG_ENDIAN are defined!"
+#endif
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#ifndef __BIG_ENDIAN
+#define __BIG_ENDIAN __ORDER_BIG_ENDIAN__
+#endif
+#ifndef _BIG_ENDIAN
+#define _BIG_ENDIAN __BIG_ENDIAN
+#endif
+#elif __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#ifndef __LITTLE_ENDIAN
+#define __LITTLE_ENDIAN __ORDER_LITTLE_ENDIAN__
+#endif
+#ifndef _LITTLE_ENDIAN
+#define _LITTLE_ENDIAN __LITTLE_ENDIAN
+#endif
 #endif
 
 #if !defined(_LITTLE_ENDIAN) && !defined(_BIG_ENDIAN)
-#error "Neither _LITTLE_ENDIAN or _BIG_ENDIAN are defined"
+#error "Neither _LITTLE_ENDIAN nor _BIG_ENDIAN are defined!"
+#endif
+#endif
+
+/* ARM Specific Macros */
+#if defined(__arm) || defined(__arm__) || defined(__aarch64__)
+
+#ifndef __arm
+#define __arm
+#endif
+#ifndef __arm__
+#define __arm__
+#endif
+
+/* i386 Specific Macros */
+#elif defined(__i386) || defined(__i386__)
+
+#ifndef __i386
+#define __i386
+#endif
+#ifndef __x86
+#define __x86
+#endif
+
+/* MIPS Specific Macros */
+#elif defined(__mips__)
+
+#define _SUNOS_VTOC_16
+
+/* PowerPC Specific Macros */
+#elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__)
+
+#ifndef __powerpc
+#define __powerpc
+#endif
+#ifndef __powerpc__
+#define __powerpc__
+#endif
+
+/* S/390 Specific Macros */
+#elif defined(__s390__)
+
+/* SPARC Specific Macros*/
+#elif defined(__sparc) || defined(__sparc__)
+
+#ifndef __sparc
+#define __sparc
+#endif
+#ifndef __sparc__
+#define __sparc__
+#endif
+
+#define _SUNOS_VTOC_16
+
+/* x86_64 Specific Macros */
+#elif defined(__x86_64) || defined(__x86_64__)
+
+#ifndef __x86_64
+#define __x86_64
+#endif
+#ifndef __amd64
+#define __amd64
+#endif
+#ifndef __x86
+#define __x86
+#endif
+
+#else
+
+/*****************************************************************************\
+ *  We currently only support the following ISA's...
+ *  arm, i386, mips, powerpc, s390, sparc, and x86_64
+\*****************************************************************************/
+
+#warning "This ISA is not Supported! Please let us know if the build succeeds!"
 #endif
 
 #endif	/* _SPL_ISA_DEFS_H */

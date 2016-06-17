@@ -39,7 +39,7 @@
 
 #if defined(__arch64__)
 #define _LP64
-#elif defined(__arch32__)
+#else
 #define _ILP32
 #endif
 

@@ -49,8 +49,13 @@ cr_groups_search(const struct group_info *group_info, gid_t grp)
 	right = group_info->ngroups;
 	while (left < right) {
 		mid = (left + right) / 2;
+#ifdef HAVE_GROUP_INFO_GRP
+		cmp = KGID_TO_SGID(grp) -
+		    KGID_TO_SGID(group_info->gid[mid]);
+#else
 		cmp = KGID_TO_SGID(grp) -
 		    KGID_TO_SGID(GROUP_AT(group_info, mid));
+#endif
 
 		if (cmp > 0)
 			left = mid + 1;
@@ -104,7 +109,11 @@ crgetgroups(const cred_t *cr)
 	gid_t *gids;
 
 	gi = get_group_info(cr->group_info);
+#ifdef HAVE_GROUP_INFO_GRP
+	gids = KGIDP_TO_SGIDP(&gi->gid[0]);
+#else
 	gids = KGIDP_TO_SGIDP(gi->blocks[0]);
+#endif
 	put_group_info(gi);
 
 	return gids;

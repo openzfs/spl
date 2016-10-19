@@ -176,7 +176,7 @@ splat_cred_test3(struct file *file, void *arg)
 	gid_t known_gid, missing_gid, tmp_gid;
 	unsigned char rnd;
 	struct group_info *gi;
-	int i, rc;
+	int i, rc, ngroups = 32;
 
 	get_random_bytes((void *)&rnd, 1);
 	known_gid = (rnd > 0) ? rnd : 1;
@@ -188,7 +188,7 @@ splat_cred_test3(struct file *file, void *arg)
 	 * 1:(NGROUPS_MAX-1).  Gid 0 is explicitly avoided so we can reliably
 	 * test for its absence in the test cases.
 	 */
-	gi = groups_alloc(NGROUPS_SMALL);
+	gi = groups_alloc(ngroups);
 	if (gi == NULL) {
 		splat_vprint(file, SPLAT_CRED_TEST3_NAME, "Failed create "
 		    "group_info for known gids: %d\n", -ENOMEM);
@@ -196,11 +196,15 @@ splat_cred_test3(struct file *file, void *arg)
 		goto show_groups;
 	}
 
-	for (i = 0, tmp_gid = known_gid; i < NGROUPS_SMALL; i++) {
+	for (i = 0, tmp_gid = known_gid; i < ngroups; i++) {
 		splat_vprint(file, SPLAT_CRED_TEST3_NAME, "Adding gid %d "
 		    "to current CRED() (%d/%d)\n", tmp_gid, i, gi->ngroups);
 #ifdef HAVE_KUIDGID_T
+#ifdef HAVE_GROUP_INFO_GRP
+		gi->gid[i] = make_kgid(current_user_ns(), tmp_gid);
+#else
 		GROUP_AT(gi, i) = make_kgid(current_user_ns(), tmp_gid);
+#endif /* */
 #else
 		GROUP_AT(gi, i) = tmp_gid;
 #endif /* HAVE_KUIDGID_T */

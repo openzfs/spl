@@ -33,6 +33,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_INODE_TRUNCATE_RANGE
 	SPL_AC_FS_STRUCT_SPINLOCK
 	SPL_AC_KUIDGID_T
+	SPL_AC_GROUP_INFO_GRP
 	SPL_AC_PUT_TASK_STRUCT
 	SPL_AC_KERNEL_FALLOCATE
 	SPL_AC_CONFIG_ZLIB_INFLATE
@@ -1075,6 +1076,30 @@ AC_DEFUN([SPL_AC_KUIDGID_T], [
 			AC_MSG_RESULT(yes; mandatory)
 			AC_DEFINE(HAVE_KUIDGID_T, 1, [kuid_t/kgid_t in use])
 		])
+	],[
+		AC_MSG_RESULT(no)
+	])
+])
+
+dnl #
+dnl # 4.9 API change,
+dnl # Credential supplementary groups converted to gid array.
+dnl #
+AC_DEFUN([SPL_AC_GROUP_INFO_GRP], [
+	AC_MSG_CHECKING([whether gi->gid[] is available])
+	SPL_LINUX_TRY_COMPILE([
+		#include <linux/uidgid.h>
+		#include <linux/cred.h>
+	], [
+		struct group_info *gi;
+
+		gi = groups_alloc(1);
+		gi->gid[0] = KGIDT_INIT(0);
+		groups_free(gi);
+	],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_GROUP_INFO_GRP, 1,
+		          [struct group_info has member gid])
 	],[
 		AC_MSG_RESULT(no)
 	])

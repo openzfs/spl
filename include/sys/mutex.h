@@ -29,10 +29,12 @@
 #include <linux/mutex.h>
 #include <linux/compiler_compat.h>
 #include <linux/lockdep.h>
+#include <spl-lockdbg.h>
 
 typedef enum {
-	MUTEX_DEFAULT   = 0,
-	MUTEX_NOLOCKDEP = 1
+	MUTEX_DEFAULT    = 0,      /* Normal */
+	MUTEX_NOLOCKDEP  = 1 << 0, /* No LockDep */
+	MUTEX_NOTRACKING = 1 << 1, /* No Tracking */
 } kmutex_type_t;
 
 typedef struct {
@@ -43,7 +45,8 @@ typedef struct {
 
 /* Use upper portion of m_flags to store flags */
 #define	MUTEX_FLAG_NOLOCKDEP	((u32)1 << 31)
-#define	MUTEX_FLAG_MASK		(~(((u32)1 << 31) - 1))
+#define	MUTEX_FLAG_NOTRACKING	((u32)1 << 30)
+#define	MUTEX_FLAG_MASK		(~(((u32)1 << 30) - 1))
 
 #define	MUTEX(mp)		(&((mp)->m_mutex))
 #define	MUTEX_FLAGS(mp)		(atomic_read(&(mp)->m_flags) & MUTEX_FLAG_MASK)
@@ -67,14 +70,19 @@ spl_mutex_set_type(kmutex_t *mp, kmutex_type_t type)
 {
 	u32 t = 0;
 
+	ASSERT((type == MUTEX_DEFAULT) ||
+		((type & (MUTEX_NOLOCKDEP | MUTEX_NOTRACKING)) != 0));
 	/*
 	 * Mutex m_flags flag/counter bits:
 	 * bit 31 : NOLOCKDEP
-	 * bits [30 - 0]: mutex_exit counter (m_flags & ~MUTEX_FLAG_MASK)
+	 * bit 30 : NODEBUG
+	 * bits [29 - 0]: mutex_exit counter (m_flags & ~MUTEX_FLAG_MASK)
 	 */
-
-	if (type == MUTEX_NOLOCKDEP)
+	if (type & MUTEX_NOLOCKDEP)
 		t |= MUTEX_FLAG_NOLOCKDEP;
+
+	if (type & MUTEX_NOTRACKING)
+		t |= MUTEX_FLAG_NOTRACKING;
 
 	atomic_set(&mp->m_flags, t & MUTEX_FLAG_MASK);
 }
@@ -82,10 +90,20 @@ spl_mutex_set_type(kmutex_t *mp, kmutex_type_t type)
 static inline kmutex_type_t
 spl_mutex_get_type(kmutex_t *mp)
 {
-	if (MUTEX_FLAGS(mp) & MUTEX_FLAG_NOLOCKDEP)
-		return MUTEX_NOLOCKDEP;
+	kmutex_type_t type = MUTEX_DEFAULT;
+	u32 flags = 0;
 
-	return MUTEX_DEFAULT;
+	ASSERT3P(mp, !=, NULL);
+
+	flags = MUTEX_FLAGS(mp);
+
+	if (flags & MUTEX_FLAG_NOLOCKDEP)
+		type |= MUTEX_NOLOCKDEP;
+
+	if (flags & MUTEX_FLAG_NOTRACKING)
+		type |= MUTEX_NOTRACKING;
+
+	return type;
 }
 
 #define	mutex_owner(mp)		(ACCESS_ONCE((mp)->m_owner))
@@ -97,14 +115,14 @@ spl_mutex_get_type(kmutex_t *mp)
 static inline void
 spl_mutex_lockdep_off_maybe(kmutex_t *mp)
 {
-	if (mp && (spl_mutex_get_type(mp) == MUTEX_NOLOCKDEP))
+	if (mp && (spl_mutex_get_type(mp) & MUTEX_NOLOCKDEP))
 		lockdep_off();
 }
 
 static inline void
 spl_mutex_lockdep_on_maybe(kmutex_t *mp)
 {
-	if (mp && (spl_mutex_get_type(mp) == MUTEX_NOLOCKDEP))
+	if (mp && (spl_mutex_get_type(mp) & MUTEX_NOLOCKDEP))
 		lockdep_on();
 }
 #else  /* CONFIG_LOCKDEP */
@@ -118,15 +136,19 @@ spl_mutex_lockdep_on_maybe(kmutex_t *mp)
  * will be correctly located in the users code which is important
  * for the built in kernel lock analysis tools
  */
+
 #undef mutex_init
 #define	mutex_init(mp, name, type, ibc)					\
 do {									\
 	static struct lock_class_key __key;				\
-	VERIFY3P((mp), !=, NULL);					\
 									\
-	__mutex_init(MUTEX(mp), (name) ? (#name) : (#mp), &__key);	\
+	VERIFY3P((mp), !=, NULL);					\
+	__mutex_init(MUTEX(mp), name, &__key);				\
 	spl_mutex_clear_owner(mp);					\
 	spl_mutex_set_type(mp, type);					\
+									\
+	spl_lock_tracking_record_init(SLT_MUTEX, (ulong_t)mp,		\
+	    OBJ_INIT_LOC);						\
 } while(0)
 
 #define	mutex_tryenter(mp)						\
@@ -194,12 +216,15 @@ do {									\
  */
 
 #undef mutex_destroy
-#define	mutex_destroy(mp)						\
-do {									\
+#define mutex_destroy(mp)						\
+{									\
+	VERIFY3P(mutex_owner(mp), ==, NULL);				\
+									\
 	while (MUTEX_COUNTER_VAL(mp) != 0)				\
 		cpu_relax();						\
 									\
-	VERIFY3P(mutex_owner(mp), ==, NULL);				\
+	spl_lock_tracking_record_destroy(SLT_MUTEX, (ulong_t)mp,	\
+	    OBJ_INIT_LOC);						\
 } while(0)
 
 int spl_mutex_init(void);

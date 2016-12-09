@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <linux/rwsem.h>
 #include <linux/rwsem_compat.h>
+#include <spl-lockdbg.h>
 
 typedef enum {
 	RW_DRIVER	= 2,
@@ -141,19 +142,23 @@ RW_LOCK_HELD(krwlock_t *rwp)
  * for the built in kernel lock analysis tools
  */
 #define rw_init(rwp, name, type, arg)					\
-({									\
+do {									\
 	static struct lock_class_key __key;				\
 	ASSERT(type == RW_DEFAULT || type == RW_NOLOCKDEP);		\
 									\
 	__init_rwsem(SEM(rwp), #rwp, &__key);				\
 	spl_rw_clear_owner(rwp);					\
 	spl_rw_set_type(rwp, type);					\
-})
+	spl_lock_tracking_record_init(SLT_RWLOCK, (ulong_t)rwp,		\
+	    OBJ_INIT_LOC);						\
+} while (0)
 
 #define rw_destroy(rwp)							\
-({									\
+do {									\
 	VERIFY(!RW_LOCK_HELD(rwp));					\
-})
+	spl_lock_tracking_record_destroy(SLT_RWLOCK, (ulong_t)rwp,	\
+	    OBJ_INIT_LOC);						\
+} while (0)
 
 #define rw_tryenter(rwp, rw)						\
 ({									\
@@ -176,7 +181,7 @@ RW_LOCK_HELD(krwlock_t *rwp)
 })
 
 #define rw_enter(rwp, rw)						\
-({									\
+do {									\
 	spl_rw_lockdep_off_maybe(rwp);					\
 	switch (rw) {							\
 	case RW_READER:							\
@@ -190,10 +195,10 @@ RW_LOCK_HELD(krwlock_t *rwp)
 		VERIFY(0);						\
 	}								\
 	spl_rw_lockdep_on_maybe(rwp);					\
-})
+} while (0)
 
 #define rw_exit(rwp)							\
-({									\
+do {									\
 	spl_rw_lockdep_off_maybe(rwp);					\
 	if (RW_WRITE_HELD(rwp)) {					\
 		spl_rw_clear_owner(rwp);				\
@@ -203,15 +208,15 @@ RW_LOCK_HELD(krwlock_t *rwp)
 		up_read(SEM(rwp));					\
 	}								\
 	spl_rw_lockdep_on_maybe(rwp);					\
-})
+} while (0)
 
 #define rw_downgrade(rwp)						\
-({									\
+do {									\
 	spl_rw_lockdep_off_maybe(rwp);					\
 	spl_rw_clear_owner(rwp);					\
 	downgrade_write(SEM(rwp));					\
 	spl_rw_lockdep_on_maybe(rwp);					\
-})
+} while (0)
 
 #define rw_tryupgrade(rwp)						\
 ({									\

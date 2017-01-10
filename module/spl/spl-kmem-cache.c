@@ -986,9 +986,7 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 		if (rc)
 			goto out;
 	} else {
-#if !defined(KMEM_CACHE_USERCOPY)
 		unsigned long slabflags = 0;
-#endif
 
 		if (size > (SPL_MAX_KMEM_ORDER_NR_PAGES * PAGE_SIZE)) {
 			rc = EINVAL;
@@ -1003,13 +1001,13 @@ spl_kmem_cache_create(char *name, size_t size, size_t align,
 		slabflags |= SLAB_USERCOPY;
 #endif
 
-#if defined(KMEM_CACHE_USERCOPY)
+#if defined(HAVE_KMEM_CACHE_CREATE_USERCOPY)
         /*
          * Newer grsec patchset uses kmem_cache_create_usercopy()
          * instead of SLAB_USERCOPY flag
          */
         skc->skc_linux_cache = kmem_cache_create_usercopy(
-            skc->skc_name, size, 0, 0, 0, size, NULL);
+            skc->skc_name, size, align, slabflags, 0, size, NULL);
 #else
         skc->skc_linux_cache = kmem_cache_create(
             skc->skc_name, size, align, slabflags, NULL);

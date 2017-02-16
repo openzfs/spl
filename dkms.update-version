@@ -1,0 +1,17 @@
+#! /bin/bash
+pushd `dirname "$0"`/../source
+PACKAGE_VERSION="$(
+  while read VAR VAL;do
+    case ${VAR} in
+      Version:)
+        META_VERSION=${VAL}
+        ;;
+      Release:)
+        META_RELEASE=${VAL}
+        ;;
+    esac
+  done < META
+  echo ${META_VERSION}.${META_RELEASE}
+)"
+sed -i "s|PACKAGE_VERSION=\".*\"|PACKAGE_VERSION=\"${PACKAGE_VERSION}\"|g" dkms.conf
+popd

@@ -25,7 +25,14 @@
 #ifndef _SPL_SYSMACROS_H
 #define _SPL_SYSMACROS_H
 
+/*
+ * https://github.com/zfsonlinux/zfs/issues/5823
+ */
+#ifndef _LINUX_REFCOUNT_H
+#define  _LINUX_REFCOUNT_H
 #include <linux/module.h>
+#endif
+
 #include <linux/sched.h>
 #include <linux/cpumask.h>
 #include <sys/debug.h>

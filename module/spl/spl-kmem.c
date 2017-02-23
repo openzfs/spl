@@ -30,6 +30,14 @@
 #include <linux/ratelimit.h>
 
 /*
+ * If the system is under memory pressure, we may never succeed in allocating
+ * memory. Rather than spinning forever, it may make sense to give up, and
+ * allow the system to resume after this operation -- at which time memory
+ * can be reaped.
+ */
+#define MAX_ALLOCATION_ATTEMPTS 15
+
+/*
  * As a general rule kmem_alloc() allocations should be small, preferably
  * just a few pages since they must by physically contiguous.  Therefore, a
  * rate limited warning will be printed to the console for any kmem_alloc()
@@ -149,7 +157,7 @@ inline void *
 spl_kmem_alloc_impl(size_t size, int flags, int node)
 {
 	gfp_t lflags = kmem_flags_convert(flags);
-	int use_vmem = 0;
+	int use_vmem = 0, attempts = 0;
 	void *ptr;
 
 	/*
@@ -171,6 +179,7 @@ spl_kmem_alloc_impl(size_t size, int flags, int node)
 	 * unlike kmem_alloc() with KM_SLEEP on Illumos.
 	 */
 	do {
+		attempts++;
 		/*
 		 * Calling kmalloc_node() when the size >= spl_kmem_alloc_max
 		 * is unsafe.  This must fail for all for kmem_alloc() and
@@ -218,7 +227,11 @@ spl_kmem_alloc_impl(size_t size, int flags, int node)
 		 * deadlocking systems where there are no block devices.
 		 */
 		cond_resched();
-	} while (1);
+	} while (unlikely(attempts < MAX_ALLOCATION_ATTEMPTS));
+
+	if (unlikely(__ratelimit(&kmem_alloc_ratelimit_state))) {
+		printk(KERN_WARNING "Too many allocation attempts, aborting\n");
+	}
 
 	return (NULL);
 }

@@ -446,6 +446,8 @@ tsd_remove_entry(tsd_hash_entry_t *entry)
 	tsd_hash_dtor(&work);
 }
 
+static void tsd_remove_entry(tsd_hash_entry_t *entry);
+
 /*
  * tsd_set - set thread specific data
  * @key: lookup key
@@ -702,6 +704,60 @@ tsd_exit(void)
 	tsd_hash_dtor(&work);
 }
 EXPORT_SYMBOL(tsd_exit);
+
+/*
+ * tsd_remove_entry - remove a tsd entry for this thread
+ * @entry: entry to remove
+ *
+ * Remove the thread specific data @entry for this thread.
+ * If this is the last entry for this thread, also remove the PID entry.
+ */
+static void
+tsd_remove_entry(tsd_hash_entry_t *entry)
+{
+	HLIST_HEAD(work);
+	tsd_hash_table_t *table;
+	tsd_hash_entry_t *pid_entry;
+	tsd_hash_bin_t *pid_entry_bin, *entry_bin;
+	ulong_t hash;
+
+	table = tsd_hash_table;
+	ASSERT3P(table, !=, NULL);
+	ASSERT3P(entry, !=, NULL);
+
+	spin_lock(&table->ht_lock);
+
+	hash = hash_long((ulong_t)entry->he_key *
+	    (ulong_t)entry->he_pid, table->ht_bits);
+	entry_bin = &table->ht_bins[hash];
+
+	/* save the possible pid_entry */
+	pid_entry = list_entry(entry->he_pid_list.next, tsd_hash_entry_t,
+			he_pid_list);
+
+	/* remove entry */
+	spin_lock(&entry_bin->hb_lock);
+	tsd_hash_del(table, entry);
+	hlist_add_head(&entry->he_list, &work);
+	spin_unlock(&entry_bin->hb_lock);
+
+	/* if pid_entry is indeed pid_entry, then remove it if it's empty */
+	if (pid_entry->he_key == PID_KEY &&
+	    list_empty(&pid_entry->he_pid_list)) {
+		hash = hash_long((ulong_t)pid_entry->he_key *
+		    (ulong_t)pid_entry->he_pid, table->ht_bits);
+		pid_entry_bin = &table->ht_bins[hash];
+
+		spin_lock(&pid_entry_bin->hb_lock);
+		tsd_hash_del(table, pid_entry);
+		hlist_add_head(&pid_entry->he_list, &work);
+		spin_unlock(&pid_entry_bin->hb_lock);
+	}
+
+	spin_unlock(&table->ht_lock);
+
+	tsd_hash_dtor(&work);
+}
 
 int
 spl_tsd_init(void)

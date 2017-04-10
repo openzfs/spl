@@ -203,6 +203,8 @@ dnl #
 AC_DEFUN([SPL_AC_RPM], [
 	RPM=rpm
 	RPMBUILD=rpmbuild
+	RPMKEYDIR=$(printf "%s/module" $(pwd))
+	AC_SUBST(RPMKEYDIR)
 
 	AC_MSG_CHECKING([whether $RPM is available])
 	AS_IF([tmp=$($RPM --version 2>/dev/null)], [
@@ -226,7 +228,7 @@ AC_DEFUN([SPL_AC_RPM], [
 
 	RPM_DEFINE_COMMON='--define "$(DEBUG_SPL) 1" --define "$(DEBUG_KMEM) 1" --define "$(DEBUG_KMEM_TRACKING) 1"'
 	RPM_DEFINE_UTIL=
-	RPM_DEFINE_KMOD='--define "kernels $(LINUX_VERSION)"'
+	RPM_DEFINE_KMOD='--define "kernels $(LINUX_VERSION)" --define "seckey $(RPMKEYDIR)/signing_key.priv" --define "pubkey $(RPMKEYDIR)/signing_key.x509"'
 	RPM_DEFINE_DKMS=
 
 	SRPM_DEFINE_COMMON='--define "build_src_rpm 1"'

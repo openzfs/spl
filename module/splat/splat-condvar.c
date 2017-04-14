@@ -90,7 +90,7 @@ splat_condvar_test12_thread(void *arg)
 
 	/* wait for main thread reap us */
 	while (!kthread_should_stop())
-		schedule();
+		schedule_timeout_interruptible(1);
 	return 0;
 }
 
@@ -123,14 +123,14 @@ splat_condvar_test1(struct file *file, void *arg)
 
 	/* Wait until all threads are waiting on the condition variable */
 	while (atomic_read(&cv.cv_condvar.cv_waiters) != count)
-		schedule();
+		schedule_timeout_interruptible(1);
 
 	/* Wake a single thread at a time, wait until it exits */
 	for (i = 1; i <= count; i++) {
 		cv_signal(&cv.cv_condvar);
 
 		while (atomic_read(&cv.cv_condvar.cv_waiters) > (count - i))
-			schedule();
+			schedule_timeout_interruptible(1);
 
 		/* Correct behavior 1 thread woken */
 		if (atomic_read(&cv.cv_condvar.cv_waiters) == (count - i))
@@ -149,7 +149,7 @@ splat_condvar_test1(struct file *file, void *arg)
 
 	/* Wait until that last nutex is dropped */
 	while (mutex_owner(&cv.cv_mtx))
-		schedule();
+		schedule_timeout_interruptible(1);
 
 	/* Wake everything for the failure case */
 	cv_broadcast(&cv.cv_condvar);
@@ -194,14 +194,14 @@ splat_condvar_test2(struct file *file, void *arg)
 
 	/* Wait until all threads are waiting on the condition variable */
 	while (atomic_read(&cv.cv_condvar.cv_waiters) != count)
-		schedule();
+		schedule_timeout_interruptible(1);
 
 	/* Wake all threads waiting on the condition variable */
 	cv_broadcast(&cv.cv_condvar);
 
 	/* Wait until all threads have exited */
 	while ((atomic_read(&cv.cv_condvar.cv_waiters) > 0) || mutex_owner(&cv.cv_mtx))
-		schedule();
+		schedule_timeout_interruptible(1);
 
         splat_vprint(file, SPLAT_CONDVAR_TEST2_NAME, "Correctly woke all "
 			   "%d sleeping threads at once\n", count);
@@ -251,7 +251,7 @@ splat_condvar_test34_thread(void *arg)
 
 	/* wait for main thread reap us */
 	while (!kthread_should_stop())
-		schedule();
+		schedule_timeout_interruptible(1);
 	return 0;
 }
 
@@ -284,14 +284,14 @@ splat_condvar_test3(struct file *file, void *arg)
 
 	/* Wait until all threads are waiting on the condition variable */
 	while (atomic_read(&cv.cv_condvar.cv_waiters) != count)
-		schedule();
+		schedule_timeout_interruptible(1);
 
 	/* Wake a single thread at a time, wait until it exits */
 	for (i = 1; i <= count; i++) {
 		cv_signal(&cv.cv_condvar);
 
 		while (atomic_read(&cv.cv_condvar.cv_waiters) > (count - i))
-			schedule();
+			schedule_timeout_interruptible(1);
 
 		/* Correct behavior 1 thread woken */
 		if (atomic_read(&cv.cv_condvar.cv_waiters) == (count - i))
@@ -315,7 +315,7 @@ splat_condvar_test3(struct file *file, void *arg)
 
 	/* Wait until that last nutex is dropped */
 	while (mutex_owner(&cv.cv_mtx))
-		schedule();
+		schedule_timeout_interruptible(1);
 
 	/* Wake everything for the failure case */
 	cv_broadcast(&cv.cv_condvar);
@@ -360,14 +360,14 @@ splat_condvar_test4(struct file *file, void *arg)
 
 	/* Wait until all threads are waiting on the condition variable */
 	while (atomic_read(&cv.cv_condvar.cv_waiters) != count)
-		schedule();
+		schedule_timeout_interruptible(1);
 
 	/* Wake a single thread at a time, wait until it exits */
 	for (i = 1; i <= count; i++) {
 		cv_signal(&cv.cv_condvar);
 
 		while (atomic_read(&cv.cv_condvar.cv_waiters) > (count - i))
-			schedule();
+			schedule_timeout_interruptible(1);
 
 		/* Correct behavior 1 thread woken */
 		if (atomic_read(&cv.cv_condvar.cv_waiters) == (count - i))
@@ -391,7 +391,7 @@ splat_condvar_test4(struct file *file, void *arg)
 
 	/* Wait until that last nutex is dropped */
 	while (mutex_owner(&cv.cv_mtx))
-		schedule();
+		schedule_timeout_interruptible(1);
 
 	/* Wake everything for the failure case */
 	cv_broadcast(&cv.cv_condvar);

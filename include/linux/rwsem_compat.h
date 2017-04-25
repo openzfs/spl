@@ -28,8 +28,13 @@
 #include <linux/rwsem.h>
 
 #if defined(CONFIG_PREEMPT_RT_FULL)
+#if defined(READER_BIAS)
+#define	SPL_RWSEM_SINGLE_READER_VALUE	(READER_BIAS + 1)
+#define	SPL_RWSEM_SINGLE_WRITER_VALUE	(WRITER_BIAS)
+#else
 #define	SPL_RWSEM_SINGLE_READER_VALUE	(1)
 #define	SPL_RWSEM_SINGLE_WRITER_VALUE	(0)
+#endif
 #elif defined(CONFIG_RWSEM_GENERIC_SPINLOCK)
 #define	SPL_RWSEM_SINGLE_READER_VALUE	(1)
 #define	SPL_RWSEM_SINGLE_WRITER_VALUE	(-1)
@@ -40,7 +45,11 @@
 
 /* Linux 3.16 changed activity to count for rwsem-spinlock */
 #if defined(CONFIG_PREEMPT_RT_FULL)
+#if defined(READER_BIAS)
+#define	RWSEM_COUNT(sem)        atomic_read(&(sem)->readers)
+#else
 #define	RWSEM_COUNT(sem)	sem->read_depth
+#endif
 #elif defined(HAVE_RWSEM_ACTIVITY)
 #define	RWSEM_COUNT(sem)	sem->activity
 /* Linux 4.8 changed count to an atomic_long_t for !rwsem-spinlock */

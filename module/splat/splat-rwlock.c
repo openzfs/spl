@@ -106,7 +106,7 @@ void splat_init_rw_priv(rw_priv_t *rwp, struct file *file)
 	rwp->rw_type = 0;
 }
 
-#if defined(CONFIG_PREEMPT_RT_FULL)
+#if defined(CONFIG_PREEMPT_RT_FULL) && !defined(READER_BIAS)
 static int
 splat_rwlock_test1(struct file *file, void *arg)
 {
@@ -537,7 +537,7 @@ splat_rwlock_test4(struct file *file, void *arg)
 	rc1 = splat_rwlock_test4_type(tq, rwp, -EBUSY, RW_WRITER, RW_WRITER);
 	rc2 = splat_rwlock_test4_type(tq, rwp, -EBUSY, RW_WRITER, RW_READER);
 	rc3 = splat_rwlock_test4_type(tq, rwp, -EBUSY, RW_READER, RW_WRITER);
-#if defined(CONFIG_PREEMPT_RT_FULL)
+#if defined(CONFIG_PREEMPT_RT_FULL) && !defined(READER_BIAS)
 	rc4 = splat_rwlock_test4_type(tq, rwp, -EBUSY, RW_READER, RW_READER);
 #else
 	rc4 = splat_rwlock_test4_type(tq, rwp, 0,      RW_READER, RW_READER);

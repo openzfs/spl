@@ -33,7 +33,31 @@
 #define DEBUG_SUBSYSTEM S_RWLOCK
 
 #if defined(CONFIG_PREEMPT_RT_FULL)
+#if defined(READER_BIAS)
 
+static int
+__rwsem_tryupgrade(struct rw_semaphore *sem)
+{
+       struct rt_mutex *m = &sem->rtmutex;
+       unsigned long flags;
+
+       if (!rt_mutex_trylock(m))
+               return 0;
+
+       atomic_sub(READER_BIAS, &sem->readers);
+
+       raw_spin_lock_irqsave(&m->wait_lock, flags);
+       if (atomic_read(&sem->readers) == 1) {
+               atomic_set(&sem->readers, WRITER_BIAS);
+               raw_spin_unlock_irqrestore(&m->wait_lock, flags);
+               return 1;
+       }
+       atomic_add(READER_BIAS, &sem->readers);
+       raw_spin_unlock_irqrestore(&m->wait_lock, flags);
+       rt_mutex_unlock(m);
+       return 0;
+}
+#else
 #include <linux/rtmutex.h>
 #define	RT_MUTEX_OWNER_MASKALL	1UL
 
@@ -66,6 +90,7 @@ __rwsem_tryupgrade(struct rw_semaphore *rwsem)
 	}
 	return (0);
 }
+#endif
 #elif defined(CONFIG_RWSEM_GENERIC_SPINLOCK)
 static int
 __rwsem_tryupgrade(struct rw_semaphore *rwsem)

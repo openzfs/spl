@@ -34,7 +34,12 @@ if CONFIG_KERNEL
 	version=${VERSION}-${RELEASE}; \
 	arch=`$(RPM) -qp $${name}-kmod-$${version}.src.rpm --qf %{arch} | tail -1`; \
 	pkg1=kmod-$${name}*$${version}.$${arch}.rpm; \
+	path_prepend=`mktemp -d /tmp/intercept.XXX`; \
+	ln -s /bin/true $${path_prepend}/dh_shlibdeps; \
+	env PATH=$${path_prepend}:$${PATH} \
 	fakeroot $(ALIEN) --bump=0 --scripts --to-deb $$pkg1; \
+	$(RM) $${path_prepend}/dh_shlibdeps; \
+	rmdir $${path_prepend}; \
 	$(RM) $$pkg1
 endif
 
@@ -44,7 +49,12 @@ if CONFIG_USER
 	version=${VERSION}-${RELEASE}; \
 	arch=`$(RPM) -qp $${name}-$${version}.src.rpm --qf %{arch} | tail -1`; \
 	pkg1=$${name}-$${version}.$${arch}.rpm; \
+	path_prepend=`mktemp -d /tmp/intercept.XXX`; \
+	ln -s /bin/true $${path_prepend}/dh_shlibdeps; \
+	env PATH=$${path_prepend}:$${PATH} \
 	fakeroot $(ALIEN) --bump=0 --scripts --to-deb $$pkg1; \
+	$(RM) $${path_prepend}/dh_shlibdeps; \
+	rmdir $${path_prepend}; \
 	$(RM) $$pkg1
 endif
 

@@ -22,29 +22,14 @@
  *  with the SPL.  If not, see <http://www.gnu.org/licenses/>.
 \*****************************************************************************/
 
-#ifndef _SPL_PROC_H
-#define _SPL_PROC_H
+#ifndef _SPL_PROC_COMPAT_H
+#define _SPL_PROC_COMPAT_H
 
 #include <linux/proc_fs.h>
-
-#ifdef CONFIG_SYSCTL
-#ifdef HAVE_2ARGS_REGISTER_SYSCTL
-#define spl_register_sysctl_table(t, a)	register_sysctl_table(t, a)
-#else
-#define spl_register_sysctl_table(t, a)	register_sysctl_table(t)
-#endif /* HAVE_2ARGS_REGISTER_SYSCTL */
-#define spl_unregister_sysctl_table(t)	unregister_sysctl_table(t)
-#endif /* CONFIG_SYSCTL */
-
-#ifdef HAVE_CTL_NAME
-#define CTL_NAME(cname)                 .ctl_name = (cname),
-#else
-#define CTL_NAME(cname)
-#endif
 
 extern struct proc_dir_entry *proc_spl_kstat;
 
 int spl_proc_init(void);
 void spl_proc_fini(void);
 
-#endif /* SPL_PROC_H */
+#endif /* SPL_PROC_COMPAT_H */

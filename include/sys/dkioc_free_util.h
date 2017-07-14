@@ -22,13 +22,37 @@
  *  with the SPL.  If not, see <http://www.gnu.org/licenses/>.
 \*****************************************************************************/
 
-#ifndef _SPL_UTSNAME_H
-#define _SPL_UTSNAME_H
+#ifndef _SPL_DKIOC_UTIL_H
+#define	_SPL_DKIOC_UTIL_H
 
-#include <linux/utsname.h>
+#include <sys/dkio.h>
 
-extern struct new_utsname *__utsname(void);
+typedef struct dkioc_free_list_ext_s {
+	uint64_t		dfle_start;
+	uint64_t		dfle_length;
+} dkioc_free_list_ext_t;
 
-#define utsname			(*__utsname())
+typedef struct dkioc_free_list_s {
+	uint64_t		dfl_flags;
+	uint64_t		dfl_num_exts;
+	int64_t			dfl_offset;
 
-#endif /* SPL_UTSNAME_H */
+	/*
+	 * N.B. this is only an internal debugging API! This is only called
+	 * from debug builds of sd for pre-release checking. Remove before GA!
+	 */
+	void			(*dfl_ck_func)(uint64_t, uint64_t, void *);
+	void			*dfl_ck_arg;
+
+	dkioc_free_list_ext_t	dfl_exts[1];
+} dkioc_free_list_t;
+
+static inline void dfl_free(dkioc_free_list_t *dfl) {
+	vmem_free(dfl, DFL_SZ(dfl->dfl_num_exts));
+}
+
+static inline dkioc_free_list_t *dfl_alloc(uint64_t dfl_num_exts, int flags) {
+	return vmem_zalloc(DFL_SZ(dfl_num_exts), flags);
+}
+
+#endif /* _SPL_DKIOC_UTIL_H */

@@ -1,9 +1,9 @@
 
 ACLOCAL_AMFLAGS = -I config
 
-include $(top_srcdir)/config/rpm.am
-include $(top_srcdir)/config/deb.am
-include $(top_srcdir)/config/tgz.am
+include config/rpm.am
+include config/deb.am
+include config/tgz.am
 
 SUBDIRS = include rpm
 if CONFIG_USER
@@ -12,10 +12,10 @@ endif
 if CONFIG_KERNEL
 SUBDIRS += module
 
-extradir = /usr/src/spl-$(VERSION)
+extradir = @prefix@/src/spl-$(VERSION)
 extra_HEADERS = spl.release.in spl_config.h.in
 
-kerneldir = /usr/src/spl-$(VERSION)/$(LINUX_VERSION)
+kerneldir = @prefix@/src/spl-$(VERSION)/$(LINUX_VERSION)
 nodist_kernel_HEADERS = spl.release spl_config.h module/$(LINUX_SYMBOLS)
 endif
 
@@ -40,11 +40,11 @@ dist-hook:
 		$(distdir)/META
 
 ctags:
-	$(RM) $(top_srcdir)/tags
+	$(RM) tags
 	find $(top_srcdir) -name .git -prune -o -name '*.[hc]' | xargs ctags
 
 etags:
-	$(RM) $(top_srcdir)/TAGS
+	$(RM) TAGS
 	find $(top_srcdir) -name .pc -prune -o -name '*.[hc]' | xargs etags -a
 
 tags: ctags etags

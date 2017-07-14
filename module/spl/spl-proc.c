@@ -26,17 +26,16 @@
 
 #include <sys/systeminfo.h>
 #include <sys/kstat.h>
+#include <sys/kmem.h>
+#include <sys/kmem_cache.h>
+#include <sys/vmem.h>
+#include <sys/taskq.h>
+#include <linux/ctype.h>
 #include <linux/kmod.h>
 #include <linux/seq_file.h>
 #include <linux/proc_compat.h>
+#include <linux/uaccess.h>
 #include <linux/version.h>
-#include <spl-debug.h>
-
-#ifdef SS_DEBUG_SUBSYS
-#undef SS_DEBUG_SUBSYS
-#endif
-
-#define SS_DEBUG_SUBSYS SS_PROC
 
 #if defined(CONSTIFY_PLUGIN) && LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0)
 typedef struct ctl_table __no_const spl_ctl_table;
@@ -44,136 +43,16 @@ typedef struct ctl_table __no_const spl_ctl_table;
 typedef struct ctl_table spl_ctl_table;
 #endif
 
-#ifdef DEBUG_KMEM
 static unsigned long table_min = 0;
 static unsigned long table_max = ~0;
-#endif
 
-#ifdef CONFIG_SYSCTL
 static struct ctl_table_header *spl_header = NULL;
-#endif /* CONFIG_SYSCTL */
-
 static struct proc_dir_entry *proc_spl = NULL;
-#ifdef DEBUG_KMEM
 static struct proc_dir_entry *proc_spl_kmem = NULL;
 static struct proc_dir_entry *proc_spl_kmem_slab = NULL;
-#endif /* DEBUG_KMEM */
+static struct proc_dir_entry *proc_spl_taskq_all = NULL;
+static struct proc_dir_entry *proc_spl_taskq = NULL;
 struct proc_dir_entry *proc_spl_kstat = NULL;
-
-#ifdef HAVE_CTL_NAME
-#ifdef HAVE_CTL_UNNUMBERED
-
-#define CTL_SPL			CTL_UNNUMBERED
-#define CTL_SPL_DEBUG		CTL_UNNUMBERED
-#define CTL_SPL_VM		CTL_UNNUMBERED
-#define CTL_SPL_MUTEX		CTL_UNNUMBERED
-#define CTL_SPL_KMEM		CTL_UNNUMBERED
-#define CTL_SPL_KSTAT		CTL_UNNUMBERED
-
-#define CTL_VERSION		CTL_UNNUMBERED /* Version */
-#define CTL_HOSTID		CTL_UNNUMBERED /* Host id by /usr/bin/hostid */
-#define CTL_KALLSYMS		CTL_UNNUMBERED /* kallsyms_lookup_name addr */
-
-#define CTL_DEBUG_SUBSYS	CTL_UNNUMBERED /* Debug subsystem */
-#define CTL_DEBUG_MASK		CTL_UNNUMBERED /* Debug mask */
-#define CTL_DEBUG_PRINTK	CTL_UNNUMBERED /* All messages to console */
-#define CTL_DEBUG_MB		CTL_UNNUMBERED /* Debug buffer size */
-#define CTL_DEBUG_BINARY	CTL_UNNUMBERED /* Binary data in buffer */
-#define CTL_DEBUG_CATASTROPHE	CTL_UNNUMBERED /* Set if BUG'd or panic'd */
-#define CTL_DEBUG_PANIC_ON_BUG	CTL_UNNUMBERED /* Should panic on BUG */
-#define CTL_DEBUG_PATH		CTL_UNNUMBERED /* Dump log location */
-#define CTL_DEBUG_DUMP		CTL_UNNUMBERED /* Dump debug buffer to file */
-#define CTL_DEBUG_FORCE_BUG	CTL_UNNUMBERED /* Hook to force a BUG */
-#define CTL_DEBUG_STACK_SIZE	CTL_UNNUMBERED /* Max observed stack size */
-
-#define CTL_CONSOLE_RATELIMIT	CTL_UNNUMBERED /* Ratelimit console messages */
-#define CTL_CONSOLE_MAX_DELAY_CS CTL_UNNUMBERED /* Max delay skip messages */
-#define CTL_CONSOLE_MIN_DELAY_CS CTL_UNNUMBERED /* Init delay skip messages */
-#define CTL_CONSOLE_BACKOFF	CTL_UNNUMBERED /* Delay increase factor */
-
-#define CTL_VM_MINFREE		CTL_UNNUMBERED /* Minimum free memory */
-#define CTL_VM_DESFREE		CTL_UNNUMBERED /* Desired free memory */
-#define CTL_VM_LOTSFREE		CTL_UNNUMBERED /* Lots of free memory */
-#define CTL_VM_NEEDFREE		CTL_UNNUMBERED /* Need free memory */
-#define CTL_VM_SWAPFS_MINFREE	CTL_UNNUMBERED /* Minimum swapfs memory */
-#define CTL_VM_SWAPFS_RESERVE	CTL_UNNUMBERED /* Reserved swapfs memory */
-#define CTL_VM_AVAILRMEM	CTL_UNNUMBERED /* Easily available memory */
-#define CTL_VM_FREEMEM		CTL_UNNUMBERED /* Free memory */
-#define CTL_VM_PHYSMEM		CTL_UNNUMBERED /* Total physical memory */
-
-#ifdef DEBUG_KMEM
-#define CTL_KMEM_KMEMUSED	CTL_UNNUMBERED /* Alloc'd kmem bytes */
-#define CTL_KMEM_KMEMMAX	CTL_UNNUMBERED /* Max alloc'd by kmem bytes */
-#define CTL_KMEM_VMEMUSED	CTL_UNNUMBERED /* Alloc'd vmem bytes */
-#define CTL_KMEM_VMEMMAX	CTL_UNNUMBERED /* Max alloc'd by vmem bytes */
-#define CTL_KMEM_SLAB_KMEMTOTAL	CTL_UNNUMBERED /* Total kmem slab size */
-#define CTL_KMEM_SLAB_KMEMALLOC	CTL_UNNUMBERED /* Alloc'd kmem slab size */
-#define CTL_KMEM_SLAB_KMEMMAX	CTL_UNNUMBERED /* Max kmem slab size */
-#define CTL_KMEM_SLAB_VMEMTOTAL	CTL_UNNUMBERED /* Total vmem slab size */
-#define CTL_KMEM_SLAB_VMEMALLOC	CTL_UNNUMBERED /* Alloc'd vmem slab size */
-#define CTL_KMEM_SLAB_VMEMMAX	CTL_UNNUMBERED /* Max vmem slab size */
-#endif
-
-#else /* HAVE_CTL_UNNUMBERED */
-
-enum {
-	CTL_SPL = 0x87,
-	CTL_SPL_DEBUG = 0x88,
-	CTL_SPL_VM = 0x89,
-	CTL_SPL_MUTEX = 0x90,
-	CTL_SPL_KMEM = 0x91,
-	CTL_SPL_KSTAT = 0x92,
-};
-
-enum {
-	CTL_VERSION = 1,		/* Version */
-	CTL_HOSTID,			/* Host id reported by /usr/bin/hostid */
-	CTL_KALLSYMS,			/* Address of kallsyms_lookup_name */
-
-#ifdef DEBUG_LOG
-	CTL_DEBUG_SUBSYS,		/* Debug subsystem */
-	CTL_DEBUG_MASK,			/* Debug mask */
-	CTL_DEBUG_PRINTK,		/* Force all messages to console */
-	CTL_DEBUG_MB,			/* Debug buffer size */
-	CTL_DEBUG_BINARY,		/* Include binary data in buffer */
-	CTL_DEBUG_CATASTROPHE,		/* Set if we have BUG'd or panic'd */
-	CTL_DEBUG_PANIC_ON_BUG,		/* Set if we should panic on BUG */
-	CTL_DEBUG_PATH,			/* Dump log location */
-	CTL_DEBUG_DUMP,			/* Dump debug buffer to file */
-	CTL_DEBUG_FORCE_BUG,		/* Hook to force a BUG */
-	CTL_DEBUG_STACK_SIZE,		/* Max observed stack size */
-#endif
-
-	CTL_CONSOLE_RATELIMIT,		/* Ratelimit console messages */
-	CTL_CONSOLE_MAX_DELAY_CS,	/* Max delay which we skip messages */
-	CTL_CONSOLE_MIN_DELAY_CS,	/* Init delay which we skip messages */
-	CTL_CONSOLE_BACKOFF,		/* Delay increase factor */
-
-	CTL_VM_MINFREE,			/* Minimum free memory threshold */
-	CTL_VM_DESFREE,			/* Desired free memory threshold */
-	CTL_VM_LOTSFREE,		/* Lots of free memory threshold */
-	CTL_VM_NEEDFREE,		/* Need free memory deficit */
-	CTL_VM_SWAPFS_MINFREE,		/* Minimum swapfs memory */
-	CTL_VM_SWAPFS_RESERVE,		/* Reserved swapfs memory */
-	CTL_VM_AVAILRMEM,		/* Easily available memory */
-	CTL_VM_FREEMEM,			/* Free memory */
-	CTL_VM_PHYSMEM,			/* Total physical memory */
-
-#ifdef DEBUG_KMEM
-	CTL_KMEM_KMEMUSED,		/* Alloc'd kmem bytes */
-	CTL_KMEM_KMEMMAX,		/* Max alloc'd by kmem bytes */
-	CTL_KMEM_VMEMUSED,		/* Alloc'd vmem bytes */
-	CTL_KMEM_VMEMMAX,		/* Max alloc'd by vmem bytes */
-	CTL_KMEM_SLAB_KMEMTOTAL,	/* Total kmem slab size */
-	CTL_KMEM_SLAB_KMEMALLOC,	/* Alloc'd kmem slab size */
-	CTL_KMEM_SLAB_KMEMMAX,		/* Max kmem slab size */
-	CTL_KMEM_SLAB_VMEMTOTAL,	/* Total vmem slab size */
-	CTL_KMEM_SLAB_VMEMALLOC,	/* Alloc'd vmem slab size */
-	CTL_KMEM_SLAB_VMEMMAX,		/* Max vmem slab size */
-#endif
-};
-#endif /* HAVE_CTL_UNNUMBERED */
-#endif /* HAVE_CTL_NAME */
 
 static int
 proc_copyin_string(char *kbuffer, int kbuffer_size,
@@ -228,202 +107,14 @@ proc_copyout_string(char *ubuffer, int ubuffer_size,
         return size;
 }
 
-#ifdef DEBUG_LOG
-SPL_PROC_HANDLER(proc_dobitmasks)
-{
-        unsigned long *mask = table->data;
-        int is_subsys = (mask == &spl_debug_subsys) ? 1 : 0;
-        int is_printk = (mask == &spl_debug_printk) ? 1 : 0;
-        int size = 512, rc;
-        char *str;
-        SENTRY;
-
-        str = kmem_alloc(size, KM_SLEEP);
-        if (str == NULL)
-                SRETURN(-ENOMEM);
-
-        if (write) {
-                rc = proc_copyin_string(str, size, buffer, *lenp);
-                if (rc < 0)
-                        SRETURN(rc);
-
-                rc = spl_debug_str2mask(mask, str, is_subsys);
-                /* Always print BUG/ASSERT to console, so keep this mask */
-                if (is_printk)
-                        *mask |= SD_EMERG;
-
-                *ppos += *lenp;
-        } else {
-                rc = spl_debug_mask2str(str, size, *mask, is_subsys);
-                if (*ppos >= rc)
-                        rc = 0;
-                else
-                        rc = proc_copyout_string(buffer, *lenp,
-                                                 str + *ppos, "\n");
-                if (rc >= 0) {
-                        *lenp = rc;
-                        *ppos += rc;
-                }
-        }
-
-        kmem_free(str, size);
-        SRETURN(rc);
-}
-
-SPL_PROC_HANDLER(proc_debug_mb)
-{
-        char str[32];
-        int rc, len;
-        SENTRY;
-
-        if (write) {
-                rc = proc_copyin_string(str, sizeof(str), buffer, *lenp);
-                if (rc < 0)
-                        SRETURN(rc);
-
-                rc = spl_debug_set_mb(simple_strtoul(str, NULL, 0));
-                *ppos += *lenp;
-        } else {
-                len = snprintf(str, sizeof(str), "%d", spl_debug_get_mb());
-                if (*ppos >= len)
-                        rc = 0;
-                else
-                        rc = proc_copyout_string(buffer,*lenp,str+*ppos,"\n");
-
-                if (rc >= 0) {
-                        *lenp = rc;
-                        *ppos += rc;
-                }
-        }
-
-        SRETURN(rc);
-}
-
-SPL_PROC_HANDLER(proc_dump_kernel)
-{
-	SENTRY;
-
-        if (write) {
-               spl_debug_dumplog(0);
-                *ppos += *lenp;
-        } else {
-                *lenp = 0;
-        }
-
-        SRETURN(0);
-}
-
-SPL_PROC_HANDLER(proc_force_bug)
-{
-	SENTRY;
-
-        if (write)
-		PANIC("Crashing due to forced panic\n");
-        else
-                *lenp = 0;
-
-	SRETURN(0);
-}
-
-SPL_PROC_HANDLER(proc_console_max_delay_cs)
-{
-        int rc, max_delay_cs;
-        spl_ctl_table dummy = *table;
-        long d;
-	SENTRY;
-
-        dummy.data = &max_delay_cs;
-        dummy.proc_handler = &proc_dointvec;
-
-        if (write) {
-                max_delay_cs = 0;
-                rc = spl_proc_dointvec(&dummy,write,filp,buffer,lenp,ppos);
-                if (rc < 0)
-                        SRETURN(rc);
-
-                if (max_delay_cs <= 0)
-                        SRETURN(-EINVAL);
-
-                d = (max_delay_cs * HZ) / 100;
-                if (d == 0 || d < spl_console_min_delay)
-                        SRETURN(-EINVAL);
-
-                spl_console_max_delay = d;
-        } else {
-                max_delay_cs = (spl_console_max_delay * 100) / HZ;
-                rc = spl_proc_dointvec(&dummy,write,filp,buffer,lenp,ppos);
-        }
-
-        SRETURN(rc);
-}
-
-SPL_PROC_HANDLER(proc_console_min_delay_cs)
-{
-        int rc, min_delay_cs;
-        spl_ctl_table dummy = *table;
-        long d;
-	SENTRY;
-
-        dummy.data = &min_delay_cs;
-        dummy.proc_handler = &proc_dointvec;
-
-        if (write) {
-                min_delay_cs = 0;
-                rc = spl_proc_dointvec(&dummy,write,filp,buffer,lenp,ppos);
-                if (rc < 0)
-                        SRETURN(rc);
-
-                if (min_delay_cs <= 0)
-                        SRETURN(-EINVAL);
-
-                d = (min_delay_cs * HZ) / 100;
-                if (d == 0 || d > spl_console_max_delay)
-                        SRETURN(-EINVAL);
-
-                spl_console_min_delay = d;
-        } else {
-                min_delay_cs = (spl_console_min_delay * 100) / HZ;
-                rc = spl_proc_dointvec(&dummy,write,filp,buffer,lenp,ppos);
-        }
-
-        SRETURN(rc);
-}
-
-SPL_PROC_HANDLER(proc_console_backoff)
-{
-        int rc, backoff;
-        spl_ctl_table dummy = *table;
-	SENTRY;
-
-        dummy.data = &backoff;
-        dummy.proc_handler = &proc_dointvec;
-
-        if (write) {
-                backoff = 0;
-                rc = spl_proc_dointvec(&dummy,write,filp,buffer,lenp,ppos);
-                if (rc < 0)
-                        SRETURN(rc);
-
-                if (backoff <= 0)
-                        SRETURN(-EINVAL);
-
-                spl_console_backoff = backoff;
-        } else {
-                backoff = spl_console_backoff;
-                rc = spl_proc_dointvec(&dummy,write,filp,buffer,lenp,ppos);
-        }
-
-        SRETURN(rc);
-}
-#endif /* DEBUG_LOG */
-
 #ifdef DEBUG_KMEM
-SPL_PROC_HANDLER(proc_domemused)
+static int
+proc_domemused(struct ctl_table *table, int write,
+    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
         int rc = 0;
         unsigned long min = 0, max = ~0, val;
         spl_ctl_table dummy = *table;
-	SENTRY;
 
         dummy.data = &val;
         dummy.proc_handler = &proc_dointvec;
@@ -438,20 +129,21 @@ SPL_PROC_HANDLER(proc_domemused)
 # else
                 val = atomic_read((atomic_t *)table->data);
 # endif /* HAVE_ATOMIC64_T */
-                rc = spl_proc_doulongvec_minmax(&dummy, write, filp,
-                                                buffer, lenp, ppos);
+                rc = proc_doulongvec_minmax(&dummy, write, buffer, lenp, ppos);
         }
 
-        SRETURN(rc);
+        return (rc);
 }
+#endif /* DEBUG_KMEM */
 
-SPL_PROC_HANDLER(proc_doslab)
+static int
+proc_doslab(struct ctl_table *table, int write,
+    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
         int rc = 0;
         unsigned long min = 0, max = ~0, val = 0, mask;
         spl_ctl_table dummy = *table;
         spl_kmem_cache_t *skc;
-        SENTRY;
 
         dummy.data = &val;
         dummy.proc_handler = &proc_dointvec;
@@ -485,78 +177,34 @@ SPL_PROC_HANDLER(proc_doslab)
                 }
 
                 up_read(&spl_kmem_cache_sem);
-                rc = spl_proc_doulongvec_minmax(&dummy, write, filp,
-                                                buffer, lenp, ppos);
+                rc = proc_doulongvec_minmax(&dummy, write, buffer, lenp, ppos);
         }
 
-        SRETURN(rc);
+        return (rc);
 }
-#endif /* DEBUG_KMEM */
 
-SPL_PROC_HANDLER(proc_dohostid)
+static int
+proc_dohostid(struct ctl_table *table, int write,
+    void __user *buffer, size_t *lenp, loff_t *ppos)
 {
         int len, rc = 0;
         char *end, str[32];
-        SENTRY;
 
         if (write) {
-                /* We can't use spl_proc_doulongvec_minmax() in the write
+                /* We can't use proc_doulongvec_minmax() in the write
                  * case here because hostid while a hex value has no
                  * leading 0x which confuses the helper function. */
                 rc = proc_copyin_string(str, sizeof(str), buffer, *lenp);
                 if (rc < 0)
-                        SRETURN(rc);
+                        return (rc);
 
                 spl_hostid = simple_strtoul(str, &end, 16);
                 if (str == end)
-                        SRETURN(-EINVAL);
+                        return (-EINVAL);
 
-        } else {
-                len = snprintf(str, sizeof(str), "%lx", spl_hostid);
-                if (*ppos >= len)
-                        rc = 0;
-                else
-                        rc = proc_copyout_string(buffer,*lenp,str+*ppos,"\n");
-
-                if (rc >= 0) {
-                        *lenp = rc;
-                        *ppos += rc;
-                }
-        }
-
-        SRETURN(rc);
-}
-
-#ifndef HAVE_KALLSYMS_LOOKUP_NAME
-SPL_PROC_HANDLER(proc_dokallsyms_lookup_name)
-{
-        int len, rc = 0;
-        char *end, str[32];
-	SENTRY;
-
-        if (write) {
-		/* This may only be set once at module load time */
-		if (spl_kallsyms_lookup_name_fn != SYMBOL_POISON)
-			SRETURN(-EEXIST);
-
-		/* We can't use spl_proc_doulongvec_minmax() in the write
-		 * case here because the address while a hex value has no
-		 * leading 0x which confuses the helper function. */
-                rc = proc_copyin_string(str, sizeof(str), buffer, *lenp);
-                if (rc < 0)
-                        SRETURN(rc);
-
-                spl_kallsyms_lookup_name_fn =
-			(kallsyms_lookup_name_t)simple_strtoul(str, &end, 16);
-		wake_up(&spl_kallsyms_lookup_name_waitq);
-
-		if (str == end)
-			SRETURN(-EINVAL);
-
-                *ppos += *lenp;
         } else {
                 len = snprintf(str, sizeof(str), "%lx",
-			       (unsigned long)spl_kallsyms_lookup_name_fn);
+		    (unsigned long) zone_get_hostid(NULL));
                 if (*ppos >= len)
                         rc = 0;
                 else
@@ -568,60 +216,186 @@ SPL_PROC_HANDLER(proc_dokallsyms_lookup_name)
                 }
         }
 
-        SRETURN(rc);
+        return (rc);
 }
-#endif /* HAVE_KALLSYMS_LOOKUP_NAME */
 
-SPL_PROC_HANDLER(proc_doavailrmem)
+static void
+taskq_seq_show_headers(struct seq_file *f)
 {
-        int len, rc = 0;
-	char str[32];
-	SENTRY;
-
-        if (write) {
-                *ppos += *lenp;
-        } else {
-		len = snprintf(str, sizeof(str), "%lu",
-			       (unsigned long)availrmem);
-		if (*ppos >= len)
-			rc = 0;
-		else
-			rc = proc_copyout_string(buffer,*lenp,str+*ppos,"\n");
-
-		if (rc >= 0) {
-			*lenp = rc;
-			*ppos += rc;
-		}
-        }
-
-        SRETURN(rc);
+	seq_printf(f, "%-25s %5s %5s %5s %5s %5s %5s %12s %5s %10s\n",
+	    "taskq", "act", "nthr", "spwn", "maxt", "pri",
+	    "mina", "maxa", "cura", "flags");
 }
 
-SPL_PROC_HANDLER(proc_dofreemem)
+/* indices into the lheads array below */
+#define	LHEAD_PEND	0
+#define LHEAD_PRIO	1
+#define LHEAD_DELAY	2
+#define LHEAD_WAIT	3
+#define LHEAD_ACTIVE	4
+#define LHEAD_SIZE	5
+
+static unsigned int spl_max_show_tasks = 512;
+module_param(spl_max_show_tasks, uint, 0644);
+MODULE_PARM_DESC(spl_max_show_tasks, "Max number of tasks shown in taskq proc");
+
+static int
+taskq_seq_show_impl(struct seq_file *f, void *p, boolean_t allflag)
 {
-        int len, rc = 0;
-	char str[32];
-	SENTRY;
+	taskq_t *tq = p;
+	taskq_thread_t *tqt;
+	wait_queue_t *wq;
+	struct task_struct *tsk;
+	taskq_ent_t *tqe;
+	char name[100];
+	struct list_head *lheads[LHEAD_SIZE], *lh;
+	static char *list_names[LHEAD_SIZE] =
+	    {"pend", "prio", "delay", "wait", "active" };
+	int i, j, have_lheads = 0;
+	unsigned long wflags, flags;
 
-        if (write) {
-                *ppos += *lenp;
-        } else {
-		len = snprintf(str, sizeof(str), "%lu", (unsigned long)freemem);
-		if (*ppos >= len)
-			rc = 0;
+	spin_lock_irqsave_nested(&tq->tq_lock, flags, tq->tq_lock_class);
+	spin_lock_irqsave(&tq->tq_wait_waitq.lock, wflags);
+
+	/* get the various lists and check whether they're empty */
+	lheads[LHEAD_PEND] = &tq->tq_pend_list;
+	lheads[LHEAD_PRIO] = &tq->tq_prio_list;
+	lheads[LHEAD_DELAY] = &tq->tq_delay_list;
+	lheads[LHEAD_WAIT] = &tq->tq_wait_waitq.task_list;
+	lheads[LHEAD_ACTIVE] = &tq->tq_active_list;
+
+	for (i = 0; i < LHEAD_SIZE; ++i) {
+		if (list_empty(lheads[i]))
+			lheads[i] = NULL;
 		else
-			rc = proc_copyout_string(buffer,*lenp,str+*ppos,"\n");
+			++have_lheads;
+	}
 
-		if (rc >= 0) {
-			*lenp = rc;
-			*ppos += rc;
+	/* early return in non-"all" mode if lists are all empty */
+	if (!allflag && !have_lheads) {
+		spin_unlock_irqrestore(&tq->tq_wait_waitq.lock, wflags);
+		spin_unlock_irqrestore(&tq->tq_lock, flags);
+		return (0);
+	}
+
+	/* unlock the waitq quickly */
+	if (!lheads[LHEAD_WAIT])
+		spin_unlock_irqrestore(&tq->tq_wait_waitq.lock, wflags);
+
+	/* show the base taskq contents */
+	snprintf(name, sizeof(name), "%s/%d", tq->tq_name, tq->tq_instance);
+	seq_printf(f, "%-25s ", name);
+	seq_printf(f, "%5d %5d %5d %5d %5d %5d %12d %5d %10x\n",
+	    tq->tq_nactive, tq->tq_nthreads, tq->tq_nspawn,
+	    tq->tq_maxthreads, tq->tq_pri, tq->tq_minalloc, tq->tq_maxalloc,
+	    tq->tq_nalloc, tq->tq_flags);
+
+	/* show the active list */
+	if (lheads[LHEAD_ACTIVE]) {
+		j = 0;
+		list_for_each_entry(tqt, &tq->tq_active_list, tqt_active_list) {
+			if (j == 0)
+				seq_printf(f, "\t%s:", list_names[LHEAD_ACTIVE]);
+			else if (j == 2) {
+				seq_printf(f, "\n\t       ");
+				j = 0;
+			}
+			seq_printf(f, " [%d]%pf(%ps)",
+			    tqt->tqt_thread->pid,
+			    tqt->tqt_task->tqent_func,
+			    tqt->tqt_task->tqent_arg);
+			++j;
 		}
-        }
+		seq_printf(f, "\n");
+	}
 
-        SRETURN(rc);
+	for (i = LHEAD_PEND; i <= LHEAD_WAIT; ++i)
+		if (lheads[i]) {
+			j = 0;
+			list_for_each(lh, lheads[i]) {
+				if (spl_max_show_tasks != 0 &&
+				    j >= spl_max_show_tasks) {
+					seq_printf(f, "\n\t(truncated)");
+					break;
+				}
+				/* show the wait waitq list */
+				if (i == LHEAD_WAIT) {
+					wq = list_entry(lh, wait_queue_t, task_list);
+					if (j == 0)
+						seq_printf(f, "\t%s:",
+						    list_names[i]);
+					else if (j % 8 == 0)
+						seq_printf(f, "\n\t     ");
+
+					tsk = wq->private;
+					seq_printf(f, " %d", tsk->pid);
+				/* pend, prio and delay lists */
+				} else {
+					tqe = list_entry(lh, taskq_ent_t,
+					    tqent_list);
+					if (j == 0)
+						seq_printf(f, "\t%s:",
+						    list_names[i]);
+					else if (j % 2 == 0)
+						seq_printf(f, "\n\t     ");
+
+					seq_printf(f, " %pf(%ps)",
+					    tqe->tqent_func,
+					    tqe->tqent_arg);
+				}
+				++j;
+			}
+			seq_printf(f, "\n");
+		}
+	if (lheads[LHEAD_WAIT])
+		spin_unlock_irqrestore(&tq->tq_wait_waitq.lock, wflags);
+	spin_unlock_irqrestore(&tq->tq_lock, flags);
+
+	return (0);
 }
 
-#ifdef DEBUG_KMEM
+static int
+taskq_all_seq_show(struct seq_file *f, void *p)
+{
+	return (taskq_seq_show_impl(f, p, B_TRUE));
+}
+
+static int
+taskq_seq_show(struct seq_file *f, void *p)
+{
+	return (taskq_seq_show_impl(f, p, B_FALSE));
+}
+
+static void *
+taskq_seq_start(struct seq_file *f, loff_t *pos)
+{
+	struct list_head *p;
+	loff_t n = *pos;
+
+	down_read(&tq_list_sem);
+	if (!n)
+		taskq_seq_show_headers(f);
+
+	p = tq_list.next;
+	while (n--) {
+		p = p->next;
+		if (p == &tq_list)
+		return (NULL);
+	}
+
+	return (list_entry(p, taskq_t, tq_taskqs));
+}
+
+static void *
+taskq_seq_next(struct seq_file *f, void *p, loff_t *pos)
+{
+	taskq_t *tq = p;
+
+	++*pos;
+	return ((tq->tq_taskqs.next == &tq_list) ?
+	       NULL : list_entry(tq->tq_taskqs.next, taskq_t, tq_taskqs));
+}
+
 static void
 slab_seq_show_headers(struct seq_file *f)
 {
@@ -681,7 +455,6 @@ slab_seq_start(struct seq_file *f, loff_t *pos)
 {
         struct list_head *p;
         loff_t n = *pos;
-        SENTRY;
 
 	down_read(&spl_kmem_cache_sem);
         if (!n)
@@ -691,20 +464,19 @@ slab_seq_start(struct seq_file *f, loff_t *pos)
         while (n--) {
                 p = p->next;
                 if (p == &spl_kmem_cache_list)
-                        SRETURN(NULL);
+                        return (NULL);
         }
 
-        SRETURN(list_entry(p, spl_kmem_cache_t, skc_list));
+        return (list_entry(p, spl_kmem_cache_t, skc_list));
 }
 
 static void *
 slab_seq_next(struct seq_file *f, void *p, loff_t *pos)
 {
 	spl_kmem_cache_t *skc = p;
-        SENTRY;
 
         ++*pos;
-        SRETURN((skc->skc_list.next == &spl_kmem_cache_list) ?
+        return ((skc->skc_list.next == &spl_kmem_cache_list) ?
 	       NULL : list_entry(skc->skc_list.next,spl_kmem_cache_t,skc_list));
 }
 
@@ -733,202 +505,56 @@ static struct file_operations proc_slab_operations = {
         .llseek         = seq_lseek,
         .release        = seq_release,
 };
-#endif /* DEBUG_KMEM */
 
-#ifdef DEBUG_LOG
-static struct ctl_table spl_debug_table[] = {
-        {
-                CTL_NAME    (CTL_DEBUG_SUBSYS)
-                .procname = "subsystem",
-                .data     = &spl_debug_subsys,
-                .maxlen   = sizeof(unsigned long),
-                .mode     = 0644,
-                .proc_handler = &proc_dobitmasks
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_MASK)
-                .procname = "mask",
-                .data     = &spl_debug_mask,
-                .maxlen   = sizeof(unsigned long),
-                .mode     = 0644,
-                .proc_handler = &proc_dobitmasks
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_PRINTK)
-                .procname = "printk",
-                .data     = &spl_debug_printk,
-                .maxlen   = sizeof(unsigned long),
-                .mode     = 0644,
-                .proc_handler = &proc_dobitmasks
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_MB)
-                .procname = "mb",
-                .mode     = 0644,
-                .proc_handler = &proc_debug_mb,
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_BINARY)
-                .procname = "binary",
-                .data     = &spl_debug_binary,
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_CATASTROPHE)
-                .procname = "catastrophe",
-                .data     = &spl_debug_catastrophe,
-                .maxlen   = sizeof(int),
-                .mode     = 0444,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_PANIC_ON_BUG)
-                .procname = "panic_on_bug",
-                .data     = &spl_debug_panic_on_bug,
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_dointvec
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_PATH)
-                .procname = "path",
-                .data     = spl_debug_file_path,
-                .maxlen   = sizeof(spl_debug_file_path),
-                .mode     = 0644,
-                .proc_handler = &proc_dostring,
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_DUMP)
-                .procname = "dump",
-                .mode     = 0200,
-                .proc_handler = &proc_dump_kernel,
-        },
-        {       CTL_NAME    (CTL_DEBUG_FORCE_BUG)
-                .procname = "force_bug",
-                .mode     = 0200,
-                .proc_handler = &proc_force_bug,
-        },
-        {
-                CTL_NAME    (CTL_CONSOLE_RATELIMIT)
-                .procname = "console_ratelimit",
-                .data     = &spl_console_ratelimit,
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_CONSOLE_MAX_DELAY_CS)
-                .procname = "console_max_delay_centisecs",
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_console_max_delay_cs,
-        },
-        {
-                CTL_NAME    (CTL_CONSOLE_MIN_DELAY_CS)
-                .procname = "console_min_delay_centisecs",
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_console_min_delay_cs,
-        },
-        {
-                CTL_NAME    (CTL_CONSOLE_BACKOFF)
-                .procname = "console_backoff",
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_console_backoff,
-        },
-        {
-                CTL_NAME    (CTL_DEBUG_STACK_SIZE)
-                .procname = "stack_max",
-                .data     = &spl_debug_stack,
-                .maxlen   = sizeof(int),
-                .mode     = 0444,
-                .proc_handler = &proc_dointvec,
-        },
-	{0},
-};
-#endif /* DEBUG_LOG */
+static void
+taskq_seq_stop(struct seq_file *f, void *v)
+{
+	up_read(&tq_list_sem);
+}
 
-static struct ctl_table spl_vm_table[] = {
-        {
-                CTL_NAME    (CTL_VM_MINFREE)
-                .procname = "minfree",
-                .data     = &minfree,
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_VM_DESFREE)
-                .procname = "desfree",
-                .data     = &desfree,
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_VM_LOTSFREE)
-                .procname = "lotsfree",
-                .data     = &lotsfree,
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_VM_NEEDFREE)
-                .procname = "needfree",
-                .data     = &needfree,
-                .maxlen   = sizeof(int),
-                .mode     = 0444,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_VM_SWAPFS_MINFREE)
-                .procname = "swapfs_minfree",
-                .data     = &swapfs_minfree,
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_VM_SWAPFS_RESERVE)
-                .procname = "swapfs_reserve",
-                .data     = &swapfs_reserve,
-                .maxlen   = sizeof(int),
-                .mode     = 0644,
-                .proc_handler = &proc_dointvec,
-        },
-        {
-                CTL_NAME    (CTL_VM_AVAILRMEM)
-                .procname = "availrmem",
-                .mode     = 0444,
-                .proc_handler = &proc_doavailrmem,
-        },
-        {
-                CTL_NAME    (CTL_VM_FREEMEM)
-                .procname = "freemem",
-                .data     = (void *)2,
-                .maxlen   = sizeof(int),
-                .mode     = 0444,
-                .proc_handler = &proc_dofreemem,
-        },
-        {
-                CTL_NAME    (CTL_VM_PHYSMEM)
-                .procname = "physmem",
-                .data     = &physmem,
-                .maxlen   = sizeof(int),
-                .mode     = 0444,
-                .proc_handler = &proc_dointvec,
-        },
-	{0},
+static struct seq_operations taskq_all_seq_ops = {
+	.show  = taskq_all_seq_show,
+	.start = taskq_seq_start,
+	.next  = taskq_seq_next,
+	.stop  = taskq_seq_stop,
 };
 
-#ifdef DEBUG_KMEM
+static struct seq_operations taskq_seq_ops = {
+	.show  = taskq_seq_show,
+	.start = taskq_seq_start,
+	.next  = taskq_seq_next,
+	.stop  = taskq_seq_stop,
+};
+
+static int
+proc_taskq_all_open(struct inode *inode, struct file *filp)
+{
+	return seq_open(filp, &taskq_all_seq_ops);
+}
+
+static int
+proc_taskq_open(struct inode *inode, struct file *filp)
+{
+	return seq_open(filp, &taskq_seq_ops);
+}
+
+static struct file_operations proc_taskq_all_operations = {
+	.open           = proc_taskq_all_open,
+	.read           = seq_read,
+	.llseek         = seq_lseek,
+	.release        = seq_release,
+};
+
+static struct file_operations proc_taskq_operations = {
+	.open           = proc_taskq_open,
+	.read           = seq_read,
+	.llseek         = seq_lseek,
+	.release        = seq_release,
+};
+
 static struct ctl_table spl_kmem_table[] = {
+#ifdef DEBUG_KMEM
         {
-                CTL_NAME    (CTL_KMEM_KMEMUSED)
                 .procname = "kmem_used",
                 .data     = &kmem_alloc_used,
 # ifdef HAVE_ATOMIC64_T
@@ -940,7 +566,6 @@ static struct ctl_table spl_kmem_table[] = {
                 .proc_handler = &proc_domemused,
         },
         {
-                CTL_NAME    (CTL_KMEM_KMEMMAX)
                 .procname = "kmem_max",
                 .data     = &kmem_alloc_max,
                 .maxlen   = sizeof(unsigned long),
@@ -949,30 +574,8 @@ static struct ctl_table spl_kmem_table[] = {
                 .mode     = 0444,
                 .proc_handler = &proc_doulongvec_minmax,
         },
+#endif /* DEBUG_KMEM */
         {
-                CTL_NAME    (CTL_KMEM_VMEMUSED)
-                .procname = "vmem_used",
-                .data     = &vmem_alloc_used,
-# ifdef HAVE_ATOMIC64_T
-                .maxlen   = sizeof(atomic64_t),
-# else
-                .maxlen   = sizeof(atomic_t),
-# endif /* HAVE_ATOMIC64_T */
-                .mode     = 0444,
-                .proc_handler = &proc_domemused,
-        },
-        {
-                CTL_NAME    (CTL_KMEM_VMEMMAX)
-                .procname = "vmem_max",
-                .data     = &vmem_alloc_max,
-                .maxlen   = sizeof(unsigned long),
-                .extra1   = &table_min,
-                .extra2   = &table_max,
-                .mode     = 0444,
-                .proc_handler = &proc_doulongvec_minmax,
-        },
-        {
-                CTL_NAME    (CTL_KMEM_SLAB_KMEMTOTAL)
                 .procname = "slab_kmem_total",
 		.data     = (void *)(KMC_KMEM | KMC_TOTAL),
                 .maxlen   = sizeof(unsigned long),
@@ -982,7 +585,6 @@ static struct ctl_table spl_kmem_table[] = {
                 .proc_handler = &proc_doslab,
         },
         {
-                CTL_NAME    (CTL_KMEM_SLAB_KMEMALLOC)
                 .procname = "slab_kmem_alloc",
 		.data     = (void *)(KMC_KMEM | KMC_ALLOC),
                 .maxlen   = sizeof(unsigned long),
@@ -992,7 +594,6 @@ static struct ctl_table spl_kmem_table[] = {
                 .proc_handler = &proc_doslab,
         },
         {
-                CTL_NAME    (CTL_KMEM_SLAB_KMEMMAX)
                 .procname = "slab_kmem_max",
 		.data     = (void *)(KMC_KMEM | KMC_MAX),
                 .maxlen   = sizeof(unsigned long),
@@ -1002,7 +603,6 @@ static struct ctl_table spl_kmem_table[] = {
                 .proc_handler = &proc_doslab,
         },
         {
-                CTL_NAME    (CTL_KMEM_SLAB_VMEMTOTAL)
                 .procname = "slab_vmem_total",
 		.data     = (void *)(KMC_VMEM | KMC_TOTAL),
                 .maxlen   = sizeof(unsigned long),
@@ -1012,7 +612,6 @@ static struct ctl_table spl_kmem_table[] = {
                 .proc_handler = &proc_doslab,
         },
         {
-                CTL_NAME    (CTL_KMEM_SLAB_VMEMALLOC)
                 .procname = "slab_vmem_alloc",
 		.data     = (void *)(KMC_VMEM | KMC_ALLOC),
                 .maxlen   = sizeof(unsigned long),
@@ -1022,7 +621,6 @@ static struct ctl_table spl_kmem_table[] = {
                 .proc_handler = &proc_doslab,
         },
         {
-                CTL_NAME    (CTL_KMEM_SLAB_VMEMMAX)
                 .procname = "slab_vmem_max",
 		.data     = (void *)(KMC_VMEM | KMC_MAX),
                 .maxlen   = sizeof(unsigned long),
@@ -1031,12 +629,11 @@ static struct ctl_table spl_kmem_table[] = {
                 .mode     = 0444,
                 .proc_handler = &proc_doslab,
         },
-	{0},
+	{},
 };
-#endif /* DEBUG_KMEM */
 
 static struct ctl_table spl_kstat_table[] = {
-	{0},
+	{},
 };
 
 static struct ctl_table spl_table[] = {
@@ -1044,7 +641,6 @@ static struct ctl_table spl_table[] = {
          * sysctl(8) prefers to go via /proc for portability.
          */
         {
-                CTL_NAME    (CTL_VERSION)
                 .procname = "version",
                 .data     = spl_version,
                 .maxlen   = sizeof(spl_version),
@@ -1052,137 +648,117 @@ static struct ctl_table spl_table[] = {
                 .proc_handler = &proc_dostring,
         },
         {
-                CTL_NAME    (CTL_HOSTID)
                 .procname = "hostid",
                 .data     = &spl_hostid,
                 .maxlen   = sizeof(unsigned long),
                 .mode     = 0644,
                 .proc_handler = &proc_dohostid,
         },
-#ifndef HAVE_KALLSYMS_LOOKUP_NAME
-        {
-                CTL_NAME    (CTL_KALLSYMS)
-                .procname = "kallsyms_lookup_name",
-                .data     = &spl_kallsyms_lookup_name_fn,
-                .maxlen   = sizeof(unsigned long),
-                .mode     = 0644,
-                .proc_handler = &proc_dokallsyms_lookup_name,
-        },
-#endif
-#ifdef DEBUG_LOG
 	{
-		CTL_NAME    (CTL_SPL_DEBUG)
-		.procname = "debug",
-		.mode     = 0555,
-		.child    = spl_debug_table,
-	},
-#endif
-	{
-		CTL_NAME    (CTL_SPL_VM)
-		.procname = "vm",
-		.mode     = 0555,
-		.child    = spl_vm_table,
-	},
-#ifdef DEBUG_KMEM
-	{
-		CTL_NAME    (CTL_SPL_KMEM)
 		.procname = "kmem",
 		.mode     = 0555,
 		.child    = spl_kmem_table,
 	},
-#endif
 	{
-		CTL_NAME    (CTL_SPL_KSTAT)
 		.procname = "kstat",
 		.mode     = 0555,
 		.child    = spl_kstat_table,
 	},
-        { 0 },
+        {},
 };
 
 static struct ctl_table spl_dir[] = {
         {
-                CTL_NAME    (CTL_SPL)
                 .procname = "spl",
                 .mode     = 0555,
                 .child    = spl_table,
         },
-        { 0 }
+        {}
 };
 
 static struct ctl_table spl_root[] = {
 	{
-	CTL_NAME    (CTL_KERN)
+#ifdef HAVE_CTL_NAME
+	.ctl_name = CTL_KERN,
+#endif
 	.procname = "kernel",
 	.mode = 0555,
 	.child = spl_dir,
 	},
-	{ 0 }
+	{}
 };
 
 int
 spl_proc_init(void)
 {
 	int rc = 0;
-        SENTRY;
 
-#ifdef CONFIG_SYSCTL
-        spl_header = spl_register_sysctl_table(spl_root, 0);
+        spl_header = register_sysctl_table(spl_root);
 	if (spl_header == NULL)
-		SRETURN(-EUNATCH);
-#endif /* CONFIG_SYSCTL */
+		return (-EUNATCH);
 
 	proc_spl = proc_mkdir("spl", NULL);
-	if (proc_spl == NULL)
-		SGOTO(out, rc = -EUNATCH);
+	if (proc_spl == NULL) {
+		rc = -EUNATCH;
+		goto out;
+	}
 
-#ifdef DEBUG_KMEM
+	proc_spl_taskq_all = proc_create_data("taskq-all", 0444,
+		proc_spl, &proc_taskq_all_operations, NULL);
+	if (proc_spl_taskq_all == NULL) {
+		rc = -EUNATCH;
+		goto out;
+	}
+
+	proc_spl_taskq = proc_create_data("taskq", 0444,
+		proc_spl, &proc_taskq_operations, NULL);
+	if (proc_spl_taskq == NULL) {
+		rc = -EUNATCH;
+		goto out;
+	}
+
         proc_spl_kmem = proc_mkdir("kmem", proc_spl);
-        if (proc_spl_kmem == NULL)
-                SGOTO(out, rc = -EUNATCH);
+        if (proc_spl_kmem == NULL) {
+                rc = -EUNATCH;
+		goto out;
+	}
 
 	proc_spl_kmem_slab = proc_create_data("slab", 0444,
 		proc_spl_kmem, &proc_slab_operations, NULL);
-        if (proc_spl_kmem_slab == NULL)
-		SGOTO(out, rc = -EUNATCH);
-
-#endif /* DEBUG_KMEM */
+        if (proc_spl_kmem_slab == NULL) {
+		rc = -EUNATCH;
+		goto out;
+	}
 
         proc_spl_kstat = proc_mkdir("kstat", proc_spl);
-        if (proc_spl_kstat == NULL)
-                SGOTO(out, rc = -EUNATCH);
+        if (proc_spl_kstat == NULL) {
+                rc = -EUNATCH;
+		goto out;
+	}
 out:
 	if (rc) {
 		remove_proc_entry("kstat", proc_spl);
-#ifdef DEBUG_KMEM
 	        remove_proc_entry("slab", proc_spl_kmem);
 		remove_proc_entry("kmem", proc_spl);
-#endif
+		remove_proc_entry("taskq-all", proc_spl);
+		remove_proc_entry("taskq", proc_spl);
 		remove_proc_entry("spl", NULL);
-#ifdef CONFIG_SYSCTL
-	        spl_unregister_sysctl_table(spl_header);
-#endif /* CONFIG_SYSCTL */
+	        unregister_sysctl_table(spl_header);
 	}
 
-        SRETURN(rc);
+        return (rc);
 }
 
 void
 spl_proc_fini(void)
 {
-        SENTRY;
-
 	remove_proc_entry("kstat", proc_spl);
-#ifdef DEBUG_KMEM
         remove_proc_entry("slab", proc_spl_kmem);
 	remove_proc_entry("kmem", proc_spl);
-#endif
+	remove_proc_entry("taskq-all", proc_spl);
+	remove_proc_entry("taskq", proc_spl);
 	remove_proc_entry("spl", NULL);
 
-#ifdef CONFIG_SYSCTL
         ASSERT(spl_header != NULL);
-        spl_unregister_sysctl_table(spl_header);
-#endif /* CONFIG_SYSCTL */
-
-        SEXIT;
+        unregister_sysctl_table(spl_header);
 }

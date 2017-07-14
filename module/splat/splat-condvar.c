@@ -24,8 +24,9 @@
  *  Solaris Porting LAyer Tests (SPLAT) Condition Variable Tests.
 \*****************************************************************************/
 
-#include <linux/kthread.h>
 #include <sys/condvar.h>
+#include <sys/timer.h>
+#include <sys/thread.h>
 #include "splat-internal.h"
 
 #define SPLAT_CONDVAR_NAME		"condvar"
@@ -87,6 +88,9 @@ splat_condvar_test12_thread(void *arg)
 	    ct->ct_thread->comm, atomic_read(&cv->cv_condvar.cv_waiters));
 	mutex_exit(&cv->cv_mtx);
 
+	/* wait for main thread reap us */
+	while (!kthread_should_stop())
+		schedule();
 	return 0;
 }
 
@@ -150,6 +154,12 @@ splat_condvar_test1(struct file *file, void *arg)
 	/* Wake everything for the failure case */
 	cv_broadcast(&cv.cv_condvar);
 	cv_destroy(&cv.cv_condvar);
+
+	/* wait for threads to exit */
+	for (i = 0; i < SPLAT_CONDVAR_TEST_COUNT; i++) {
+		if (!IS_ERR(ct[i].ct_thread))
+			kthread_stop(ct[i].ct_thread);
+	}
 	mutex_destroy(&cv.cv_mtx);
 
 	return rc;
@@ -198,6 +208,12 @@ splat_condvar_test2(struct file *file, void *arg)
 
 	/* Wake everything for the failure case */
 	cv_destroy(&cv.cv_condvar);
+
+	/* wait for threads to exit */
+	for (i = 0; i < SPLAT_CONDVAR_TEST_COUNT; i++) {
+		if (!IS_ERR(ct[i].ct_thread))
+			kthread_stop(ct[i].ct_thread);
+	}
 	mutex_destroy(&cv.cv_mtx);
 
 	return rc;
@@ -233,6 +249,9 @@ splat_condvar_test34_thread(void *arg)
 
 	mutex_exit(&cv->cv_mtx);
 
+	/* wait for main thread reap us */
+	while (!kthread_should_stop())
+		schedule();
 	return 0;
 }
 
@@ -301,6 +320,12 @@ splat_condvar_test3(struct file *file, void *arg)
 	/* Wake everything for the failure case */
 	cv_broadcast(&cv.cv_condvar);
 	cv_destroy(&cv.cv_condvar);
+
+	/* wait for threads to exit */
+	for (i = 0; i < SPLAT_CONDVAR_TEST_COUNT; i++) {
+		if (!IS_ERR(ct[i].ct_thread))
+			kthread_stop(ct[i].ct_thread);
+	}
 	mutex_destroy(&cv.cv_mtx);
 
 	return rc;
@@ -371,6 +396,12 @@ splat_condvar_test4(struct file *file, void *arg)
 	/* Wake everything for the failure case */
 	cv_broadcast(&cv.cv_condvar);
 	cv_destroy(&cv.cv_condvar);
+
+	/* wait for threads to exit */
+	for (i = 0; i < SPLAT_CONDVAR_TEST_COUNT; i++) {
+		if (!IS_ERR(ct[i].ct_thread))
+			kthread_stop(ct[i].ct_thread);
+	}
 	mutex_destroy(&cv.cv_mtx);
 
 	return rc;
@@ -382,8 +413,8 @@ splat_condvar_test5(struct file *file, void *arg)
         kcondvar_t condvar;
         kmutex_t mtx;
 	clock_t time_left, time_before, time_after, time_delta;
-	int64_t whole_delta;
-	int32_t remain_delta;
+	uint64_t whole_delta;
+	uint32_t remain_delta;
 	int rc = 0;
 
 	mutex_init(&mtx, SPLAT_CONDVAR_TEST_NAME, MUTEX_DEFAULT, NULL);
@@ -407,19 +438,20 @@ splat_condvar_test5(struct file *file, void *arg)
 			splat_vprint(file, SPLAT_CONDVAR_TEST5_NAME,
 			           "Thread correctly timed out and was asleep "
 			           "for %d.%d seconds (%d second min)\n",
-			           (int)whole_delta, remain_delta, 1);
+			           (int)whole_delta, (int)remain_delta, 1);
 		} else {
 			splat_vprint(file, SPLAT_CONDVAR_TEST5_NAME,
 			           "Thread correctly timed out but was only "
 			           "asleep for %d.%d seconds (%d second "
-			           "min)\n", (int)whole_delta, remain_delta, 1);
+			           "min)\n", (int)whole_delta,
+				   (int)remain_delta, 1);
 			rc = -ETIMEDOUT;
 		}
 	} else {
 		splat_vprint(file, SPLAT_CONDVAR_TEST5_NAME,
 		           "Thread exited after only %d.%d seconds, it "
 		           "did not hit the %d second timeout\n",
-		           (int)whole_delta, remain_delta, 1);
+		           (int)whole_delta, (int)remain_delta, 1);
 		rc = -ETIMEDOUT;
 	}
 
@@ -446,15 +478,15 @@ splat_condvar_init(void)
         spin_lock_init(&sub->test_lock);
         sub->desc.id = SPLAT_SUBSYSTEM_CONDVAR;
 
-        SPLAT_TEST_INIT(sub, SPLAT_CONDVAR_TEST1_NAME, SPLAT_CONDVAR_TEST1_DESC,
+        splat_test_init(sub, SPLAT_CONDVAR_TEST1_NAME, SPLAT_CONDVAR_TEST1_DESC,
                       SPLAT_CONDVAR_TEST1_ID, splat_condvar_test1);
-        SPLAT_TEST_INIT(sub, SPLAT_CONDVAR_TEST2_NAME, SPLAT_CONDVAR_TEST2_DESC,
+        splat_test_init(sub, SPLAT_CONDVAR_TEST2_NAME, SPLAT_CONDVAR_TEST2_DESC,
                       SPLAT_CONDVAR_TEST2_ID, splat_condvar_test2);
-        SPLAT_TEST_INIT(sub, SPLAT_CONDVAR_TEST3_NAME, SPLAT_CONDVAR_TEST3_DESC,
+        splat_test_init(sub, SPLAT_CONDVAR_TEST3_NAME, SPLAT_CONDVAR_TEST3_DESC,
                       SPLAT_CONDVAR_TEST3_ID, splat_condvar_test3);
-        SPLAT_TEST_INIT(sub, SPLAT_CONDVAR_TEST4_NAME, SPLAT_CONDVAR_TEST4_DESC,
+        splat_test_init(sub, SPLAT_CONDVAR_TEST4_NAME, SPLAT_CONDVAR_TEST4_DESC,
                       SPLAT_CONDVAR_TEST4_ID, splat_condvar_test4);
-        SPLAT_TEST_INIT(sub, SPLAT_CONDVAR_TEST5_NAME, SPLAT_CONDVAR_TEST5_DESC,
+        splat_test_init(sub, SPLAT_CONDVAR_TEST5_NAME, SPLAT_CONDVAR_TEST5_DESC,
                       SPLAT_CONDVAR_TEST5_ID, splat_condvar_test5);
 
         return sub;
@@ -464,11 +496,11 @@ void
 splat_condvar_fini(splat_subsystem_t *sub)
 {
         ASSERT(sub);
-        SPLAT_TEST_FINI(sub, SPLAT_CONDVAR_TEST5_ID);
-        SPLAT_TEST_FINI(sub, SPLAT_CONDVAR_TEST4_ID);
-        SPLAT_TEST_FINI(sub, SPLAT_CONDVAR_TEST3_ID);
-        SPLAT_TEST_FINI(sub, SPLAT_CONDVAR_TEST2_ID);
-        SPLAT_TEST_FINI(sub, SPLAT_CONDVAR_TEST1_ID);
+        splat_test_fini(sub, SPLAT_CONDVAR_TEST5_ID);
+        splat_test_fini(sub, SPLAT_CONDVAR_TEST4_ID);
+        splat_test_fini(sub, SPLAT_CONDVAR_TEST3_ID);
+        splat_test_fini(sub, SPLAT_CONDVAR_TEST2_ID);
+        splat_test_fini(sub, SPLAT_CONDVAR_TEST1_ID);
 
         kfree(sub);
 }

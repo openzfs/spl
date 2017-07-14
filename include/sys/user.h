@@ -1,9 +1,7 @@
 /*****************************************************************************\
- *  Copyright (C) 2007-2010 Lawrence Livermore National Security, LLC.
- *  Copyright (C) 2007 The Regents of the University of California.
- *  Produced at Lawrence Livermore National Laboratory (cf, DISCLAIMER).
- *  Written by Brian Behlendorf <behlendorf1@llnl.gov>.
- *  UCRL-CODE-235197
+ *  Copyright (C) 2015 Cluster Inc.
+ *  Produced at ClusterHQ Inc (cf, DISCLAIMER).
+ *  Written by Richard Yao <richard.yao@clusterhq.com>.
  *
  *  This file is part of the SPL, Solaris Porting Layer.
  *  For details, see <http://zfsonlinux.org/>.
@@ -22,23 +20,23 @@
  *  with the SPL.  If not, see <http://www.gnu.org/licenses/>.
 \*****************************************************************************/
 
-#ifndef _SPL_KALLSYMS_COMPAT_H
-#define _SPL_KALLSYMS_COMPAT_H
+#ifndef _SPL_USER_H
+#define _SPL_USER_H
 
-#define SYMBOL_POISON ((void*)0xabcddcba)
+/*
+ * We have uf_info_t for areleasef(). We implement areleasef() using a global
+ * linked list of all open file descriptors with the task structs referenced,
+ * so accessing the correct descriptor from areleasef() only requires knowing
+ * about the Linux task_struct. Since this is internal to our compatibility
+ * layer, we make it an opaque type.
+ *
+ * XXX: If the descriptor changes under us and we do not do a getf() between
+ * the change and using it, we would get an incorrect reference.
+ */
 
-#ifdef HAVE_KALLSYMS_LOOKUP_NAME
+struct uf_info;
+typedef struct uf_info uf_info_t;
 
-#include <linux/kallsyms.h>
-#define spl_kallsyms_lookup_name(name) kallsyms_lookup_name(name)
+#define P_FINFO(x) ((uf_info_t *)x)
 
-#else
-
-extern wait_queue_head_t spl_kallsyms_lookup_name_waitq;
-typedef unsigned long (*kallsyms_lookup_name_t)(const char *);
-extern kallsyms_lookup_name_t spl_kallsyms_lookup_name_fn;
-#define spl_kallsyms_lookup_name(name) spl_kallsyms_lookup_name_fn(name)
-
-#endif /* HAVE_KALLSYMS_LOOKUP_NAME */
-
-#endif /* _SPL_KALLSYMS_COMPAT_H */
+#endif /* SPL_USER_H */

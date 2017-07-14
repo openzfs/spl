@@ -63,6 +63,14 @@ AC_DEFUN([SPL_AC_META], [
 			if test -n "${_release}"; then
 				SPL_META_RELEASE=${_release}
 				_spl_ac_meta_type="git describe"
+			else
+				_match="${SPL_META_NAME}-${SPL_META_VERSION}-${SPL_META_RELEASE}"
+	                        _alias=$(git describe --match=${_match} 2>/dev/null)
+	                        _release=$(echo ${_alias}|cut -f3- -d'-'|sed 's/-/_/g')
+				if test -n "${_release}"; then
+					SPL_META_RELEASE=${_release}
+					_spl_ac_meta_type="git describe"
+				fi
 			fi
 		fi
 
@@ -74,6 +82,14 @@ AC_DEFUN([SPL_AC_META], [
 
 			RELEASE="$SPL_META_RELEASE"
 			AC_SUBST([RELEASE])
+		fi
+
+		SPL_META_LICENSE=_SPL_AC_META_GETVAL([License]);
+		if test -n "$SPL_META_LICENSE"; then
+			AC_DEFINE_UNQUOTED([SPL_META_LICENSE], ["$SPL_META_LICENSE"],
+				[Define the project license.]
+			)
+			AC_SUBST([SPL_META_LICENSE])
 		fi
 
 		if test -n "$SPL_META_NAME" -a -n "$SPL_META_VERSION"; then

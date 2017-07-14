@@ -37,10 +37,6 @@ PRE_BUILD="configure
       then
         echo --enable-debug
       fi
-      if [[ \${SPL_DKMS_ENABLE_DEBUG_LOG,,} == @(y|yes) ]]
-      then
-        echo --enable-debug-log
-      fi
       if [[ \${SPL_DKMS_ENABLE_DEBUG_KMEM,,} == @(y|yes) ]]
       then
         echo --enable-debug-kmem
@@ -56,7 +52,7 @@ PRE_BUILD="configure
     }
   )
 "
-POST_INSTALL="scripts/dkms.postinst
+POST_BUILD="scripts/dkms.postbuild
   -n \${PACKAGE_NAME}
   -v \${PACKAGE_VERSION}
   -a \${arch}

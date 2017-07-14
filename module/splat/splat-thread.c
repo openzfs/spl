@@ -26,6 +26,8 @@
 
 #include <sys/thread.h>
 #include <sys/random.h>
+#include <linux/delay.h>
+#include <linux/mm_compat.h>
 #include <linux/slab.h>
 #include "splat-internal.h"
 
@@ -110,7 +112,7 @@ splat_thread_test1(struct file *file, void *arg)
 	tp.tp_rc = 0;
 
 	thr = (kthread_t *)thread_create(NULL, 0, splat_thread_work1, &tp, 0,
-			                 &p0, TS_RUN, minclsyspri);
+			                 &p0, TS_RUN, defclsyspri);
 	/* Must never fail under Solaris, but we check anyway since this
 	 * can happen in the linux SPL, we may want to change this behavior */
 	if (thr == NULL)
@@ -159,7 +161,7 @@ splat_thread_test2(struct file *file, void *arg)
 	tp.tp_rc = 0;
 
 	thr = (kthread_t *)thread_create(NULL, 0, splat_thread_work2, &tp, 0,
-			                 &p0, TS_RUN, minclsyspri);
+			                 &p0, TS_RUN, defclsyspri);
 	/* Must never fail under Solaris, but we check anyway since this
 	 * can happen in the linux SPL, we may want to change this behavior */
 	if (thr == NULL)
@@ -276,7 +278,7 @@ splat_thread_test3(struct file *file, void *arg)
 	/* Start tsd wait threads */
 	for (i = 0; i < SPLAT_THREAD_TEST_THREADS; i++) {
 		if (thread_create(NULL, 0, splat_thread_work3_wait,
-				  &tp, 0, &p0, TS_RUN, minclsyspri))
+				  &tp, 0, &p0, TS_RUN, defclsyspri))
 			wait_count++;
 	}
 
@@ -293,7 +295,7 @@ splat_thread_test3(struct file *file, void *arg)
 	/* Start tsd exit threads */
 	for (i = 0; i < SPLAT_THREAD_TEST_THREADS; i++) {
 		if (thread_create(NULL, 0, splat_thread_work3_exit,
-				  &tp, 0, &p0, TS_RUN, minclsyspri))
+				  &tp, 0, &p0, TS_RUN, defclsyspri))
 			exit_count++;
 	}
 
@@ -360,11 +362,11 @@ splat_thread_init(void)
         spin_lock_init(&sub->test_lock);
         sub->desc.id = SPLAT_SUBSYSTEM_THREAD;
 
-        SPLAT_TEST_INIT(sub, SPLAT_THREAD_TEST1_NAME, SPLAT_THREAD_TEST1_DESC,
+        splat_test_init(sub, SPLAT_THREAD_TEST1_NAME, SPLAT_THREAD_TEST1_DESC,
                       SPLAT_THREAD_TEST1_ID, splat_thread_test1);
-        SPLAT_TEST_INIT(sub, SPLAT_THREAD_TEST2_NAME, SPLAT_THREAD_TEST2_DESC,
+        splat_test_init(sub, SPLAT_THREAD_TEST2_NAME, SPLAT_THREAD_TEST2_DESC,
                       SPLAT_THREAD_TEST2_ID, splat_thread_test2);
-        SPLAT_TEST_INIT(sub, SPLAT_THREAD_TEST3_NAME, SPLAT_THREAD_TEST3_DESC,
+        splat_test_init(sub, SPLAT_THREAD_TEST3_NAME, SPLAT_THREAD_TEST3_DESC,
                       SPLAT_THREAD_TEST3_ID, splat_thread_test3);
 
         return sub;
@@ -374,9 +376,9 @@ void
 splat_thread_fini(splat_subsystem_t *sub)
 {
         ASSERT(sub);
-        SPLAT_TEST_FINI(sub, SPLAT_THREAD_TEST3_ID);
-        SPLAT_TEST_FINI(sub, SPLAT_THREAD_TEST2_ID);
-        SPLAT_TEST_FINI(sub, SPLAT_THREAD_TEST1_ID);
+        splat_test_fini(sub, SPLAT_THREAD_TEST3_ID);
+        splat_test_fini(sub, SPLAT_THREAD_TEST2_ID);
+        splat_test_fini(sub, SPLAT_THREAD_TEST1_ID);
 
         kfree(sub);
 }

@@ -44,6 +44,9 @@
 #define _LP64
 #endif
 
+#define _ALIGNMENT_REQUIRED            1
+
+
 /* i386 arch specific defines */
 #elif defined(__i386) || defined(__i386__)
 
@@ -59,8 +62,10 @@
 #define _ILP32
 #endif
 
+#define _ALIGNMENT_REQUIRED            0
+
 /* powerpc (ppc64) arch specific defines */
-#elif defined(__powerpc) || defined(__powerpc__)
+#elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__)
 
 #if !defined(__powerpc)
 #define __powerpc
@@ -70,9 +75,21 @@
 #define __powerpc__
 #endif
 
+#if defined(__powerpc64__)
 #if !defined(_LP64)
 #define _LP64
 #endif
+#else
+#if !defined(_ILP32)
+#define _ILP32
+#endif
+#endif
+
+/*
+ * Illumos doesn't define _ALIGNMENT_REQUIRED for PPC, so default to 1
+ * out of paranoia.
+ */
+#define _ALIGNMENT_REQUIRED            1
 
 /* arm arch specific defines */
 #elif defined(__arm) || defined(__arm__) || defined(__aarch64__)
@@ -85,11 +102,27 @@
 #define __arm__
 #endif
 
+#if defined(__aarch64__)
+#if !defined(_LP64)
+#define _LP64
+#endif
+#else
+#if !defined(_ILP32)
+#define _ILP32
+#endif
+#endif
+
 #if defined(__ARMEL__) || defined(__AARCH64EL__)
 #define _LITTLE_ENDIAN
 #else
 #define _BIG_ENDIAN
 #endif
+
+/*
+ * Illumos doesn't define _ALIGNMENT_REQUIRED for ARM, so default to 1
+ * out of paranoia.
+ */
+#define _ALIGNMENT_REQUIRED            1
 
 /* sparc arch specific defines */
 #elif defined(__sparc) || defined(__sparc__)
@@ -102,29 +135,77 @@
 #define __sparc__
 #endif
 
-#define _BIG_ENDIAN
-#define _SUNOS_VTOC_16
-
-/* sparc64 arch specific defines */
-#elif defined(__sparc64) || defined(__sparc64__)
-
-#if !defined(__sparc64)
-#define __sparc64
+#if defined(__arch64__)
+#if !defined(_LP64)
+#define _LP64
 #endif
-
-#if !defined(__sparc64__)
-#define __sparc64__
+#else
+#if !defined(_ILP32)
+#define _ILP32
+#endif
 #endif
 
 #define _BIG_ENDIAN
 #define _SUNOS_VTOC_16
+#define _ALIGNMENT_REQUIRED            1
 
-#else /* Currently x86_64, i386, arm, powerpc, and sparc are supported */
+/* s390 arch specific defines */
+#elif defined(__s390__)
+#if defined(__s390x__)
+#if !defined(_LP64)
+#define	_LP64
+#endif
+#else
+#if !defined(_ILP32)
+#define	_ILP32
+#endif
+#endif
+
+#define	_BIG_ENDIAN
+
+/*
+ * Illumos doesn't define _ALIGNMENT_REQUIRED for s390, so default to 1
+ * out of paranoia.
+ */
+#define _ALIGNMENT_REQUIRED            1
+
+/* MIPS arch specific defines */
+#elif defined(__mips__)
+
+#if defined(__MIPSEB__)
+#define	_BIG_ENDIAN
+#elif defined(__MIPSEL__)
+#define	_LITTLE_ENDIAN
+#else
+#error MIPS no endian specified
+#endif
+
+#ifndef _LP64
+#define	_ILP32
+#endif
+
+#define	_SUNOS_VTOC_16
+
+/*
+ * Illumos doesn't define _ALIGNMENT_REQUIRED for MIPS, so default to 1
+ * out of paranoia.
+ */
+#define _ALIGNMENT_REQUIRED            1
+
+#else
+/*
+ * Currently supported:
+ * x86_64, i386, arm, powerpc, s390, sparc, and mips
+ */
 #error "Unsupported ISA type"
 #endif
 
 #if defined(_ILP32) && defined(_LP64)
 #error "Both _ILP32 and _LP64 are defined"
+#endif
+
+#if !defined(_ILP32) && !defined(_LP64)
+#error "Neither _ILP32 or _LP64 are defined"
 #endif
 
 #include <sys/byteorder.h>

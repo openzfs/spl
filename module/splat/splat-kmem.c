@@ -25,7 +25,11 @@
 \*****************************************************************************/
 
 #include <sys/kmem.h>
+#include <sys/kmem_cache.h>
+#include <sys/vmem.h>
+#include <sys/random.h>
 #include <sys/thread.h>
+#include <sys/vmsystm.h>
 #include "splat-internal.h"
 
 #define SPLAT_KMEM_NAME			"kmem"
@@ -77,10 +81,6 @@
 #define SPLAT_KMEM_TEST11_DESC		"Slab memory overcommit test"
 #endif
 
-#define SPLAT_KMEM_TEST12_ID		0x010c
-#define SPLAT_KMEM_TEST12_NAME		"vmem_size"
-#define SPLAT_KMEM_TEST12_DESC		"Memory zone test"
-
 #define SPLAT_KMEM_TEST13_ID		0x010d
 #define SPLAT_KMEM_TEST13_NAME		"slab_reclaim"
 #define SPLAT_KMEM_TEST13_DESC		"Slab direct memory reclaim test"
@@ -96,11 +96,11 @@ splat_kmem_test1(struct file *file, void *arg)
 	int size = PAGE_SIZE;
 	int i, count, rc = 0;
 
-	while ((!rc) && (size <= (PAGE_SIZE * 32))) {
+	while ((!rc) && (size <= spl_kmem_alloc_warn)) {
 		count = 0;
 
 		for (i = 0; i < SPLAT_KMEM_ALLOC_COUNT; i++) {
-			ptr[i] = kmem_alloc(size, KM_SLEEP | KM_NODEBUG);
+			ptr[i] = kmem_alloc(size, KM_SLEEP);
 			if (ptr[i])
 				count++;
 		}
@@ -128,11 +128,11 @@ splat_kmem_test2(struct file *file, void *arg)
 	int size = PAGE_SIZE;
 	int i, j, count, rc = 0;
 
-	while ((!rc) && (size <= (PAGE_SIZE * 32))) {
+	while ((!rc) && (size <= spl_kmem_alloc_warn)) {
 		count = 0;
 
 		for (i = 0; i < SPLAT_KMEM_ALLOC_COUNT; i++) {
-			ptr[i] = kmem_zalloc(size, KM_SLEEP | KM_NODEBUG);
+			ptr[i] = kmem_zalloc(size, KM_SLEEP);
 			if (ptr[i])
 				count++;
 		}
@@ -172,7 +172,11 @@ splat_kmem_test3(struct file *file, void *arg)
 	int size = PAGE_SIZE;
 	int i, count, rc = 0;
 
-	while ((!rc) && (size <= (PAGE_SIZE * 1024))) {
+	/*
+	 * Test up to 4x the maximum kmem_alloc() size to ensure both
+	 * the kmem_alloc() and vmem_alloc() call paths are used.
+	 */
+	while ((!rc) && (size <= (4 * spl_kmem_alloc_max))) {
 		count = 0;
 
 		for (i = 0; i < SPLAT_VMEM_ALLOC_COUNT; i++) {
@@ -204,7 +208,11 @@ splat_kmem_test4(struct file *file, void *arg)
 	int size = PAGE_SIZE;
 	int i, j, count, rc = 0;
 
-	while ((!rc) && (size <= (PAGE_SIZE * 1024))) {
+	/*
+	 * Test up to 4x the maximum kmem_zalloc() size to ensure both
+	 * the kmem_zalloc() and vmem_zalloc() call paths are used.
+	 */
+	while ((!rc) && (size <= (4 * spl_kmem_alloc_max))) {
 		count = 0;
 
 		for (i = 0; i < SPLAT_VMEM_ALLOC_COUNT; i++) {
@@ -317,7 +325,7 @@ splat_kmem_cache_test_kct_alloc(kmem_cache_priv_t *kcp, int id)
 {
 	kmem_cache_thread_t *kct;
 
-	ASSERTF(id < SPLAT_KMEM_THREADS, "id=%d\n", id);
+	ASSERT3S(id, <, SPLAT_KMEM_THREADS);
 	ASSERT(kcp->kcp_kct[id] == NULL);
 
 	kct = kmem_zalloc(sizeof(kmem_cache_thread_t), KM_SLEEP);
@@ -576,87 +584,127 @@ out:
 
 static int
 splat_kmem_cache_test(struct file *file, void *arg, char *name,
-		      int size, int align, int flags)
+    int size, int align, int flags)
 {
-	kmem_cache_priv_t *kcp;
-	kmem_cache_data_t *kcd = NULL;
-	int rc = 0, max;
+	kmem_cache_priv_t *kcp = NULL;
+	kmem_cache_data_t **kcd = NULL;
+	int i, rc = 0, objs = 0;
+
+	/* Limit size for low memory machines (1/128 of memory) */
+	size = MIN(size, (physmem * PAGE_SIZE) >> 7);
+
+	splat_vprint(file, name,
+	    "Testing size=%d, align=%d, flags=0x%04x\n",
+	    size, align, flags);
 
 	kcp = splat_kmem_cache_test_kcp_alloc(file, name, size, align, 0);
 	if (!kcp) {
 		splat_vprint(file, name, "Unable to create '%s'\n", "kcp");
-		return -ENOMEM;
+		return (-ENOMEM);
 	}
 
-	kcp->kcp_cache =
-		kmem_cache_create(SPLAT_KMEM_CACHE_NAME,
-				  kcp->kcp_size, kcp->kcp_align,
-				  splat_kmem_cache_test_constructor,
-				  splat_kmem_cache_test_destructor,
-				  NULL, kcp, NULL, flags);
-	if (!kcp->kcp_cache) {
-		splat_vprint(file, name,
-			     "Unable to create '%s'\n",
-			     SPLAT_KMEM_CACHE_NAME);
+	kcp->kcp_cache = kmem_cache_create(SPLAT_KMEM_CACHE_NAME,
+	    kcp->kcp_size, kcp->kcp_align,
+	    splat_kmem_cache_test_constructor,
+	    splat_kmem_cache_test_destructor,
+	    NULL, kcp, NULL, flags);
+	if (kcp->kcp_cache == NULL) {
+		splat_vprint(file, name, "Unable to create "
+		    "name='%s', size=%d, align=%d, flags=0x%x\n",
+		    SPLAT_KMEM_CACHE_NAME, size, align, flags);
 		rc = -ENOMEM;
 		goto out_free;
 	}
 
-	kcd = kmem_cache_alloc(kcp->kcp_cache, KM_SLEEP);
-	if (!kcd) {
-		splat_vprint(file, name,
-			     "Unable to allocate from '%s'\n",
-			     SPLAT_KMEM_CACHE_NAME);
-		rc = -EINVAL;
+	/*
+	 * Allocate several slabs worth of objects to verify functionality.
+	 * However, on 32-bit systems with limited address space constrain
+	 * it to a single slab for the purposes of this test.
+	 */
+#ifdef _LP64
+	objs = kcp->kcp_cache->skc_slab_objs * 4;
+#else
+	objs = 1;
+#endif
+	kcd = kmem_zalloc(sizeof (kmem_cache_data_t *) * objs, KM_SLEEP);
+	if (kcd == NULL) {
+		splat_vprint(file, name, "Unable to allocate pointers "
+		    "for %d objects\n", objs);
+		rc = -ENOMEM;
 		goto out_free;
 	}
 
-	if (!kcd->kcd_flag) {
-		splat_vprint(file, name,
-			     "Failed to run contructor for '%s'\n",
-			     SPLAT_KMEM_CACHE_NAME);
-		rc = -EINVAL;
-		goto out_free;
+	for (i = 0; i < objs; i++) {
+		kcd[i] = kmem_cache_alloc(kcp->kcp_cache, KM_SLEEP);
+		if (kcd[i] == NULL) {
+			splat_vprint(file, name, "Unable to allocate "
+			    "from '%s'\n", SPLAT_KMEM_CACHE_NAME);
+			rc = -EINVAL;
+			goto out_free;
+		}
+
+		if (!kcd[i]->kcd_flag) {
+			splat_vprint(file, name, "Failed to run constructor "
+			    "for '%s'\n", SPLAT_KMEM_CACHE_NAME);
+			rc = -EINVAL;
+			goto out_free;
+		}
+
+		if (kcd[i]->kcd_magic != kcp->kcp_magic) {
+			splat_vprint(file, name,
+			    "Failed to pass private data to constructor "
+			    "for '%s'\n", SPLAT_KMEM_CACHE_NAME);
+			rc = -EINVAL;
+			goto out_free;
+		}
 	}
 
-	if (kcd->kcd_magic != kcp->kcp_magic) {
-		splat_vprint(file, name,
-			     "Failed to pass private data to constructor "
-			     "for '%s'\n", SPLAT_KMEM_CACHE_NAME);
-		rc = -EINVAL;
-		goto out_free;
+	for (i = 0; i < objs; i++) {
+		kmem_cache_free(kcp->kcp_cache, kcd[i]);
+
+		/* Destructors are run for every kmem_cache_free() */
+		if (kcd[i]->kcd_flag) {
+			splat_vprint(file, name,
+			    "Failed to run destructor for '%s'\n",
+			    SPLAT_KMEM_CACHE_NAME);
+			rc = -EINVAL;
+			goto out_free;
+		}
 	}
 
-	max = kcp->kcp_count;
-	kmem_cache_free(kcp->kcp_cache, kcd);
-
-	/* Destroy the entire cache which will force destructors to
-	 * run and we can verify one was called for every object */
-	kmem_cache_destroy(kcp->kcp_cache);
 	if (kcp->kcp_count) {
 		splat_vprint(file, name,
-			     "Failed to run destructor on all slab objects "
-			     "for '%s'\n", SPLAT_KMEM_CACHE_NAME);
+		    "Failed to run destructor on all slab objects for '%s'\n",
+		    SPLAT_KMEM_CACHE_NAME);
 		rc = -EINVAL;
 	}
+
+	kmem_free(kcd, sizeof (kmem_cache_data_t *) * objs);
+	kmem_cache_destroy(kcp->kcp_cache);
 
 	splat_kmem_cache_test_kcp_free(kcp);
 	splat_vprint(file, name,
-		     "Successfully ran ctors/dtors for %d elements in '%s'\n",
-		     max, SPLAT_KMEM_CACHE_NAME);
+	    "Success ran alloc'd/free'd %d objects of size %d\n",
+	    objs, size);
 
-	return rc;
+	return (rc);
 
 out_free:
-	if (kcd)
-		kmem_cache_free(kcp->kcp_cache, kcd);
+	if (kcd) {
+		for (i = 0; i < objs; i++) {
+			if (kcd[i] != NULL)
+				kmem_cache_free(kcp->kcp_cache, kcd[i]);
+		}
+
+		kmem_free(kcd, sizeof (kmem_cache_data_t *) * objs);
+	}
 
 	if (kcp->kcp_cache)
 		kmem_cache_destroy(kcp->kcp_cache);
 
 	splat_kmem_cache_test_kcp_free(kcp);
 
-	return rc;
+	return (rc);
 }
 
 static int
@@ -694,7 +742,7 @@ splat_kmem_cache_thread_test(struct file *file, void *arg, char *name,
 	for (i = 0; i < SPLAT_KMEM_THREADS; i++) {
 		thr = thread_create(NULL, 0,
 				    splat_kmem_cache_test_thread,
-				    kcp, 0, &p0, TS_RUN, minclsyspri);
+				    kcp, 0, &p0, TS_RUN, defclsyspri);
 		if (thr == NULL) {
 			rc = -ESRCH;
 			goto out_cache;
@@ -750,35 +798,49 @@ static int
 splat_kmem_test5(struct file *file, void *arg)
 {
 	char *name = SPLAT_KMEM_TEST5_NAME;
-	int rc;
+	int i, rc = 0;
 
-	/* On slab (default + kmem + vmem) */
-	rc = splat_kmem_cache_test(file, arg, name, 128, 0, 0);
-	if (rc)
-		return rc;
+	/* Randomly pick small object sizes and alignments. */
+	for (i = 0; i < 100; i++) {
+		int size, align, flags = 0;
+		uint32_t rnd;
 
-	rc = splat_kmem_cache_test(file, arg, name, 128, 0, KMC_KMEM);
-	if (rc)
-		return rc;
+		/* Evenly distribute tests over all value cache types */
+		get_random_bytes((void *)&rnd, sizeof (uint32_t));
+		switch (rnd & 0x03) {
+		default:
+		case 0x00:
+			flags = 0;
+			break;
+		case 0x01:
+			flags = KMC_KMEM;
+			break;
+		case 0x02:
+			flags = KMC_VMEM;
+			break;
+		case 0x03:
+			flags = KMC_SLAB;
+			break;
+		}
 
-	rc = splat_kmem_cache_test(file, arg, name, 128, 0, KMC_VMEM);
-	if (rc)
-		return rc;
+		/* The following flags are set with a 1/10 chance */
+		flags |= ((((rnd >> 8) % 10) == 0) ? KMC_OFFSLAB : 0);
+		flags |= ((((rnd >> 16) % 10) == 0) ? KMC_NOEMERGENCY : 0);
 
-	/* Off slab (default + kmem + vmem) */
-	rc = splat_kmem_cache_test(file, arg, name, 128, 0, KMC_OFFSLAB);
-	if (rc)
-		return rc;
+		/* 32b - PAGE_SIZE */
+		get_random_bytes((void *)&rnd, sizeof (uint32_t));
+		size = MAX(rnd % (PAGE_SIZE + 1), 32);
 
-	rc = splat_kmem_cache_test(file, arg, name, 128, 0,
-	    KMC_KMEM | KMC_OFFSLAB);
-	if (rc)
-		return rc;
+		/* 2^N where (3 <= N <= PAGE_SHIFT) */
+		get_random_bytes((void *)&rnd, sizeof (uint32_t));
+		align = (1 << MAX(3, rnd % (PAGE_SHIFT + 1)));
 
-	rc = splat_kmem_cache_test(file, arg, name, 128, 0,
-	    KMC_VMEM | KMC_OFFSLAB);
+		rc = splat_kmem_cache_test(file, arg, name, size, align, flags);
+		if (rc)
+			return (rc);
+	}
 
-	return rc;
+	return (rc);
 }
 
 /*
@@ -788,35 +850,53 @@ static int
 splat_kmem_test6(struct file *file, void *arg)
 {
 	char *name = SPLAT_KMEM_TEST6_NAME;
-	int rc;
+	int i, max_size, rc = 0;
 
-	/* On slab (default + kmem + vmem) */
-	rc = splat_kmem_cache_test(file, arg, name, 256*1024, 0, 0);
-	if (rc)
-		return rc;
+	/* Randomly pick large object sizes and alignments. */
+	for (i = 0; i < 100; i++) {
+		int size, align, flags = 0;
+		uint32_t rnd;
 
-	rc = splat_kmem_cache_test(file, arg, name, 64*1024, 0, KMC_KMEM);
-	if (rc)
-		return rc;
+		/* Evenly distribute tests over all value cache types */
+		get_random_bytes((void *)&rnd, sizeof (uint32_t));
+		switch (rnd & 0x03) {
+		default:
+		case 0x00:
+			flags = 0;
+			max_size = (SPL_KMEM_CACHE_MAX_SIZE * 1024 * 1024) / 2;
+			break;
+		case 0x01:
+			flags = KMC_KMEM;
+			max_size = (SPL_MAX_ORDER_NR_PAGES - 2) * PAGE_SIZE;
+			break;
+		case 0x02:
+			flags = KMC_VMEM;
+			max_size = (SPL_KMEM_CACHE_MAX_SIZE * 1024 * 1024) / 2;
+			break;
+		case 0x03:
+			flags = KMC_SLAB;
+			max_size = SPL_MAX_KMEM_ORDER_NR_PAGES * PAGE_SIZE;
+			break;
+		}
 
-	rc = splat_kmem_cache_test(file, arg, name, 1024*1024, 0, KMC_VMEM);
-	if (rc)
-		return rc;
+		/* The following flags are set with a 1/10 chance */
+		flags |= ((((rnd >> 8) % 10) == 0) ? KMC_OFFSLAB : 0);
+		flags |= ((((rnd >> 16) % 10) == 0) ? KMC_NOEMERGENCY : 0);
 
-	/* Off slab (default + kmem + vmem) */
-	rc = splat_kmem_cache_test(file, arg, name, 256*1024, 0, KMC_OFFSLAB);
-	if (rc)
-		return rc;
+		/* PAGE_SIZE - max_size */
+		get_random_bytes((void *)&rnd, sizeof (uint32_t));
+		size = MAX(rnd % (max_size + 1), PAGE_SIZE),
 
-	rc = splat_kmem_cache_test(file, arg, name, 64*1024, 0,
-	    KMC_KMEM | KMC_OFFSLAB);
-	if (rc)
-		return rc;
+		/* 2^N where (3 <= N <= PAGE_SHIFT) */
+		get_random_bytes((void *)&rnd, sizeof (uint32_t));
+		align = (1 << MAX(3, rnd % (PAGE_SHIFT + 1)));
 
-	rc = splat_kmem_cache_test(file, arg, name, 1024*1024, 0,
-	    KMC_VMEM | KMC_OFFSLAB);
+		rc = splat_kmem_cache_test(file, arg, name, size, align, flags);
+		if (rc)
+			return (rc);
+	}
 
-	return rc;
+	return (rc);
 }
 
 /*
@@ -826,14 +906,20 @@ static int
 splat_kmem_test7(struct file *file, void *arg)
 {
 	char *name = SPLAT_KMEM_TEST7_NAME;
+	int max_size = (SPL_KMEM_CACHE_MAX_SIZE * 1024 * 1024) / 2;
 	int i, rc;
 
 	for (i = SPL_KMEM_CACHE_ALIGN; i <= PAGE_SIZE; i *= 2) {
-		rc = splat_kmem_cache_test(file, arg, name, 157, i, 0);
+		uint32_t size;
+
+		get_random_bytes((void *)&size, sizeof (uint32_t));
+		size = MAX(size % (max_size + 1), 32);
+
+		rc = splat_kmem_cache_test(file, arg, name, size, i, 0);
 		if (rc)
 			return rc;
 
-		rc = splat_kmem_cache_test(file, arg, name, 157, i,
+		rc = splat_kmem_cache_test(file, arg, name, size, i,
 		    KMC_OFFSLAB);
 		if (rc)
 			return rc;
@@ -1045,9 +1131,15 @@ out:
 static int
 splat_kmem_test10(struct file *file, void *arg)
 {
-	uint64_t size, alloc, rc = 0;
+	uint64_t size, alloc, maxsize, limit, rc = 0;
 
-	for (size = 32; size <= 1024*1024; size *= 2) {
+#if defined(CONFIG_64BIT)
+	maxsize = (1024 * 1024);
+#else
+	maxsize = (128 * 1024);
+#endif
+
+	for (size = 32; size <= maxsize; size *= 2) {
 
 		splat_vprint(file, SPLAT_KMEM_TEST10_NAME, "%-22s  %s", "name",
 			     "time (sec)\tslabs       \tobjs	\thash\n");
@@ -1056,9 +1148,10 @@ splat_kmem_test10(struct file *file, void *arg)
 
 		for (alloc = 1; alloc <= 1024; alloc *= 2) {
 
-			/* Skip tests which exceed available memory.  We
-			 * leverage availrmem here for some extra testing */
-			if (size * alloc * SPLAT_KMEM_THREADS > availrmem / 2)
+			/* Skip tests which exceed 1/2 of memory. */
+			limit = MIN(physmem * PAGE_SIZE,
+			    vmem_size(NULL, VMEM_ALLOC | VMEM_FREE)) / 2;
+			if (size * alloc * SPLAT_KMEM_THREADS > limit)
 				continue;
 
 			rc = splat_kmem_cache_thread_test(file, arg,
@@ -1104,84 +1197,6 @@ splat_kmem_test11(struct file *file, void *arg)
 }
 #endif
 
-/*
- * Check vmem_size() behavior by acquiring the alloc/free/total vmem
- * space, then allocate a known buffer size from vmem space.  We can
- * then check that vmem_size() values were updated properly with in
- * a fairly small tolerence.  The tolerance is important because we
- * are not the only vmem consumer on the system.  Other unrelated
- * allocations might occur during the small test window.  The vmem
- * allocation itself may also add in a little extra private space to
- * the buffer.  Finally, verify total space always remains unchanged.
- */
-static int
-splat_kmem_test12(struct file *file, void *arg)
-{
-	size_t alloc1, free1, total1;
-	size_t alloc2, free2, total2;
-	int size = 8*1024*1024;
-	void *ptr;
-
-	alloc1 = vmem_size(NULL, VMEM_ALLOC);
-	free1  = vmem_size(NULL, VMEM_FREE);
-	total1 = vmem_size(NULL, VMEM_ALLOC | VMEM_FREE);
-	splat_vprint(file, SPLAT_KMEM_TEST12_NAME, "Vmem alloc=%lu "
-		     "free=%lu total=%lu\n", (unsigned long)alloc1,
-		     (unsigned long)free1, (unsigned long)total1);
-
-	splat_vprint(file, SPLAT_KMEM_TEST12_NAME, "Alloc %d bytes\n", size);
-	ptr = vmem_alloc(size, KM_SLEEP);
-	if (!ptr) {
-		splat_vprint(file, SPLAT_KMEM_TEST12_NAME,
-		             "Failed to alloc %d bytes\n", size);
-		return -ENOMEM;
-	}
-
-	alloc2 = vmem_size(NULL, VMEM_ALLOC);
-	free2  = vmem_size(NULL, VMEM_FREE);
-	total2 = vmem_size(NULL, VMEM_ALLOC | VMEM_FREE);
-	splat_vprint(file, SPLAT_KMEM_TEST12_NAME, "Vmem alloc=%lu "
-		     "free=%lu total=%lu\n", (unsigned long)alloc2,
-		     (unsigned long)free2, (unsigned long)total2);
-
-	splat_vprint(file, SPLAT_KMEM_TEST12_NAME, "Free %d bytes\n", size);
-	vmem_free(ptr, size);
-	if (alloc2 < (alloc1 + size - (size / 100)) ||
-	    alloc2 > (alloc1 + size + (size / 100))) {
-		splat_vprint(file, SPLAT_KMEM_TEST12_NAME, "Failed "
-			     "VMEM_ALLOC size: %lu != %lu+%d (+/- 1%%)\n",
-		             (unsigned long)alloc2,(unsigned long)alloc1,size);
-		return -ERANGE;
-	}
-
-	if (free2 < (free1 - size - (size / 100)) ||
-	    free2 > (free1 - size + (size / 100))) {
-		splat_vprint(file, SPLAT_KMEM_TEST12_NAME, "Failed "
-			     "VMEM_FREE size: %lu != %lu-%d (+/- 1%%)\n",
-		             (unsigned long)free2, (unsigned long)free1, size);
-		return -ERANGE;
-	}
-
-	if (total1 != total2) {
-		splat_vprint(file, SPLAT_KMEM_TEST12_NAME, "Failed "
-			     "VMEM_ALLOC | VMEM_FREE not constant: "
-		             "%lu != %lu\n", (unsigned long)total2,
-			     (unsigned long)total1);
-		return -ERANGE;
-	}
-
-	splat_vprint(file, SPLAT_KMEM_TEST12_NAME,
-	             "VMEM_ALLOC within tolerance: ~%ld%% (%ld/%d)\n",
-	             (long)abs(alloc1 + (long)size - alloc2) * 100 / (long)size,
-	             (long)abs(alloc1 + (long)size - alloc2), size);
-	splat_vprint(file, SPLAT_KMEM_TEST12_NAME,
-	             "VMEM_FREE within tolerance:  ~%ld%% (%ld/%d)\n",
-	             (long)abs((free1 - (long)size) - free2) * 100 / (long)size,
-	             (long)abs((free1 - (long)size) - free2), size);
-
-	return 0;
-}
-
 typedef struct dummy_page {
 	struct list_head dp_list;
 	char             dp_pad[PAGE_SIZE - sizeof(struct list_head)];
@@ -1216,7 +1231,8 @@ splat_kmem_test13(struct file *file, void *arg)
 	int i, rc = 0, max_time = 10;
 
 	size = 128 * 1024;
-	count = ((physmem * PAGE_SIZE) / 4 / size);
+	count = MIN(physmem * PAGE_SIZE, vmem_size(NULL,
+	    VMEM_ALLOC | VMEM_FREE)) / 4 / size;
 
 	kcp = splat_kmem_cache_test_kcp_alloc(file, SPLAT_KMEM_TEST13_NAME,
 	                                      size, 0, 0);
@@ -1336,33 +1352,31 @@ splat_kmem_init(void)
 	spin_lock_init(&sub->test_lock);
 	sub->desc.id = SPLAT_SUBSYSTEM_KMEM;
 
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST1_NAME, SPLAT_KMEM_TEST1_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST1_NAME, SPLAT_KMEM_TEST1_DESC,
 			SPLAT_KMEM_TEST1_ID, splat_kmem_test1);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST2_NAME, SPLAT_KMEM_TEST2_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST2_NAME, SPLAT_KMEM_TEST2_DESC,
 			SPLAT_KMEM_TEST2_ID, splat_kmem_test2);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST3_NAME, SPLAT_KMEM_TEST3_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST3_NAME, SPLAT_KMEM_TEST3_DESC,
 			SPLAT_KMEM_TEST3_ID, splat_kmem_test3);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST4_NAME, SPLAT_KMEM_TEST4_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST4_NAME, SPLAT_KMEM_TEST4_DESC,
 			SPLAT_KMEM_TEST4_ID, splat_kmem_test4);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST5_NAME, SPLAT_KMEM_TEST5_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST5_NAME, SPLAT_KMEM_TEST5_DESC,
 			SPLAT_KMEM_TEST5_ID, splat_kmem_test5);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST6_NAME, SPLAT_KMEM_TEST6_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST6_NAME, SPLAT_KMEM_TEST6_DESC,
 			SPLAT_KMEM_TEST6_ID, splat_kmem_test6);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST7_NAME, SPLAT_KMEM_TEST7_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST7_NAME, SPLAT_KMEM_TEST7_DESC,
 			SPLAT_KMEM_TEST7_ID, splat_kmem_test7);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST8_NAME, SPLAT_KMEM_TEST8_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST8_NAME, SPLAT_KMEM_TEST8_DESC,
 			SPLAT_KMEM_TEST8_ID, splat_kmem_test8);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST9_NAME, SPLAT_KMEM_TEST9_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST9_NAME, SPLAT_KMEM_TEST9_DESC,
 			SPLAT_KMEM_TEST9_ID, splat_kmem_test9);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST10_NAME, SPLAT_KMEM_TEST10_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST10_NAME, SPLAT_KMEM_TEST10_DESC,
 			SPLAT_KMEM_TEST10_ID, splat_kmem_test10);
 #if 0
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST11_NAME, SPLAT_KMEM_TEST11_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST11_NAME, SPLAT_KMEM_TEST11_DESC,
 			SPLAT_KMEM_TEST11_ID, splat_kmem_test11);
 #endif
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST12_NAME, SPLAT_KMEM_TEST12_DESC,
-			SPLAT_KMEM_TEST12_ID, splat_kmem_test12);
-	SPLAT_TEST_INIT(sub, SPLAT_KMEM_TEST13_NAME, SPLAT_KMEM_TEST13_DESC,
+	splat_test_init(sub, SPLAT_KMEM_TEST13_NAME, SPLAT_KMEM_TEST13_DESC,
 			SPLAT_KMEM_TEST13_ID, splat_kmem_test13);
 
 	return sub;
@@ -1372,21 +1386,20 @@ void
 splat_kmem_fini(splat_subsystem_t *sub)
 {
 	ASSERT(sub);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST13_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST12_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST13_ID);
 #if 0
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST11_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST11_ID);
 #endif
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST10_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST9_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST8_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST7_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST6_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST5_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST4_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST3_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST2_ID);
-	SPLAT_TEST_FINI(sub, SPLAT_KMEM_TEST1_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST10_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST9_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST8_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST7_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST6_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST5_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST4_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST3_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST2_ID);
+	splat_test_fini(sub, SPLAT_KMEM_TEST1_ID);
 
 	kfree(sub);
 }

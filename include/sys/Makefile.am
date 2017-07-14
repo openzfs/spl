@@ -29,6 +29,7 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/dirent.h \
 	$(top_srcdir)/include/sys/disp.h \
 	$(top_srcdir)/include/sys/dkio.h \
+	$(top_srcdir)/include/sys/dkioc_free_util.h \
 	$(top_srcdir)/include/sys/dklabel.h \
 	$(top_srcdir)/include/sys/dnlc.h \
 	$(top_srcdir)/include/sys/dumphdr.h \
@@ -44,6 +45,7 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/isa_defs.h \
 	$(top_srcdir)/include/sys/kidmap.h \
 	$(top_srcdir)/include/sys/kmem.h \
+	$(top_srcdir)/include/sys/kmem_cache.h \
 	$(top_srcdir)/include/sys/kobj.h \
 	$(top_srcdir)/include/sys/kstat.h \
 	$(top_srcdir)/include/sys/list.h \
@@ -90,11 +92,12 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/u8_textprep.h \
 	$(top_srcdir)/include/sys/uio.h \
 	$(top_srcdir)/include/sys/unistd.h \
-	$(top_srcdir)/include/sys/utsname.h \
+	$(top_srcdir)/include/sys/user.h \
 	$(top_srcdir)/include/sys/va_list.h \
 	$(top_srcdir)/include/sys/varargs.h \
 	$(top_srcdir)/include/sys/vfs.h \
 	$(top_srcdir)/include/sys/vfs_opreg.h \
+	$(top_srcdir)/include/sys/vmem.h \
 	$(top_srcdir)/include/sys/vmsystm.h \
 	$(top_srcdir)/include/sys/vnode.h \
 	$(top_srcdir)/include/sys/zmod.h \
@@ -105,7 +108,7 @@ USER_H =
 EXTRA_DIST = $(COMMON_H) $(KERNEL_H) $(USER_H)
 
 if CONFIG_KERNEL
-kerneldir = /usr/src/spl-$(VERSION)/include/sys
+kerneldir = @prefix@/src/spl-$(VERSION)/include/sys
 kernel_HEADERS = $(KERNEL_H)
 endif
 

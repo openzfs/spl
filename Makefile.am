@@ -5,20 +5,6 @@ include config/rpm.am
 include config/deb.am
 include config/tgz.am
 
-SUBDIRS = include rpm
-if CONFIG_USER
-SUBDIRS += lib cmd man scripts
-endif
-if CONFIG_KERNEL
-SUBDIRS += module
-
-extradir = @prefix@/src/spl-$(VERSION)
-extra_HEADERS = spl.release.in spl_config.h.in
-
-kerneldir = @prefix@/src/spl-$(VERSION)/$(LINUX_VERSION)
-nodist_kernel_HEADERS = spl.release spl_config.h module/$(LINUX_SYMBOLS)
-endif
-
 AUTOMAKE_OPTIONS = foreign
 EXTRA_DIST  = autogen.sh META DISCLAIMER copy-builtin
 EXTRA_DIST += config/config.awk config/rpm.am config/deb.am config/tgz.am
@@ -49,6 +35,11 @@ etags:
 
 tags: ctags etags
 
-pkg: @DEFAULT_PACKAGE@
-pkg-kmod: @DEFAULT_PACKAGE@-kmod
-pkg-utils: @DEFAULT_PACKAGE@-utils
+pkg:
+	echo OK
+
+pkg-kmod:
+	echo OK
+
+pkg-utils:
+	echo OK

@@ -49,37 +49,6 @@ SPL_AC_CONFIG
 
 AC_CONFIG_FILES([
 	Makefile
-	man/Makefile
-	man/man1/Makefile
-	man/man5/Makefile
-	lib/Makefile
-	cmd/Makefile
-	cmd/splat/Makefile
-	cmd/splslab/Makefile
-	module/Makefile
-	module/spl/Makefile
-	module/splat/Makefile
-	include/Makefile
-	include/fs/Makefile
-	include/linux/Makefile
-	include/rpc/Makefile
-	include/sharefs/Makefile
-	include/sys/Makefile
-	include/sys/fm/Makefile
-	include/sys/fs/Makefile
-	include/sys/sysevent/Makefile
-	include/util/Makefile
-	include/vm/Makefile
-	scripts/Makefile
-	rpm/Makefile
-	rpm/redhat/Makefile
-	rpm/redhat/spl.spec
-	rpm/redhat/spl-kmod.spec
-	rpm/redhat/spl-dkms.spec
-	rpm/generic/Makefile
-	rpm/generic/spl.spec
-	rpm/generic/spl-kmod.spec
-	rpm/generic/spl-dkms.spec
 	spl.release
 ])
 

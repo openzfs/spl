@@ -28,3 +28,40 @@ $(MODULE)-objs += spl-xdr.o
 $(MODULE)-objs += spl-cred.o
 $(MODULE)-objs += spl-tsd.o
 $(MODULE)-objs += spl-zlib.o
+$(MODULE)-objs += spl-mulbuf-thdpool.o
+$(MODULE)-objs += spl-mulbuf-queue.o
+$(MODULE)-objs += spl-mulbuf-queue-sha256.o
+$(MODULE)-objs += spl-mulbuf-suite-sha256.o
+#$(MODULE)-objs += spl-mulbuf-test.o
+
+@CONFIG_HASH_MB_TRUE@hash_mb = 1
+ifdef hash_mb
+$(MODULE)-objs += isa-l.o_shipped
+$(obj)/isa-l.o_shipped:
+	@# add Makefile to compile kernel space object
+	@echo 'include Makefile.unx' > @HASH_MB_SRC@/Makefile.kern
+	@echo 'product = isa-l' >> @HASH_MB_SRC@/Makefile.kern
+	@echo 'kernobj: $$(product).o_shipped' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '$$(product).o_shipped: CFLAGS+= -fno-common \' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '-mcmodel=kernel -fno-stack-protector \' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '$$(product).o_shipped: D+=ALIGN_STACK REL_TEXT' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '$$(product).o_shipped: DEFINES+=-D NDEBUG' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '$$(product).o_shipped: DEBUG_$$(AS)=' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '$$(product).o_shipped: DEBUG=' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '$$(product).o_shipped: $$(objs)' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '	@echo "  ---> Creating bin $$@"' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '	@$$(AR) $$(ARFLAGS) $$^' >> @HASH_MB_SRC@/Makefile.kern
+	@echo '	@$$(STRIP_$$(CC))' >> @HASH_MB_SRC@/Makefile.kern
+	@# compile kernel space object from isa-l crypto
+	@echo "Get multi-buffer hash object from isa-l crypto"
+	@if [ -f @HASH_MB_SRC@/isa-l.o_shipped ]; then \
+	mv @HASH_MB_SRC@/isa-l.o_shipped $(obj); \
+	else echo "Please run: $(MAKE) -C @HASH_MB_SRC@ -f Makefile.kern kernobj"; \
+	echo "then continue run: make"; exit 1; fi
+endif
+
+ $(product).o_shipped: DEBUG_$(AS)=    # Don't put debug symbols in the lib
+ $(product).o_shipped: DEBUG=
+ $(product).o_shipped: DEFINES+=-D NDEBUG
+	

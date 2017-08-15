@@ -17,6 +17,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	KERNELCPPFLAGS="$KERNELCPPFLAGS -Wstrict-prototypes"
 	AC_SUBST(KERNELCPPFLAGS)
 
+	SPL_AC_HASH_MB
 	SPL_AC_DEBUG
 	SPL_AC_DEBUG_KMEM
 	SPL_AC_DEBUG_KMEM_TRACKING
@@ -186,6 +187,55 @@ AC_DEFUN([SPL_AC_KERNEL], [
 
 	SPL_AC_MODULE_SYMVERS
 ])
+
+dnl #
+dnl # Detect ISA-L multi-buffer hash
+dnl # ISA-L multi-buffer hash provides software acceleration for SHA256:
+dnl # 	https://github.com/01org/isa-l_crypto
+dnl # * Download ISA-L crypto lib source code from above link and checkout
+dnl # master branch.
+dnl # * Enable multi-buffer hash in SPL, e.g.:
+dnl # 	./configure --with-hash-mb=<isa-l-crypto-code-path>
+dnl # 	make
+dnl #   Following make notice, run:
+dnl #	make -C <isa-l-crypto-code-path> -f Makefile.kern kernobj
+dnl #	Then, continue run:
+dnl #	make
+dnl #
+dnl # Then multi-buffer hash facility is built into SPL and exported sha256
+dnl # API out to ZFS.
+dnl # * To disable multi-buffer hash facility:
+dnl # 	modprobe spl spl_hash_mb_disable=1
+dnl #
+AC_DEFUN([SPL_AC_HASH_MB], [
+	AC_ARG_WITH([hash_mb],
+		AS_HELP_STRING([--with-hash-mb=PATH],
+		[Path to isa-l crypto source]),
+		[hash_mb_src="$withval"])
+
+	AS_IF([test ! -z "${hash_mb_src}"], [
+		AC_MSG_CHECKING([hash-mb source directory])
+		AC_MSG_RESULT([$hash_mb_src])
+		HASH_MB_SRC="${hash_mb_src}"
+		AS_IF([ test ! -e "$HASH_MB_SRC/include/multi_buffer.h"], [
+			AC_MSG_ERROR([
+		*** Please make sure the isa-l crypto source is downloaded
+		*** and specify the location of its source with the
+		*** '--with-hash-mb=PATH' option then try again. Failed to
+		*** find multi_buffer.h in:
+		${HASH_MB_SRC}/include])
+		])
+	])
+
+	AS_IF([test ! -z "${hash_mb_src}"], [
+		AC_SUBST(HASH_MB_SRC)
+		AC_DEFINE(HAVE_HASH_MB, 1,
+			[multi-buffer hash is enabled])
+
+		SPL_AC_FPU_HEADER
+	])
+])
+
 
 dnl #
 dnl # Default SPL user configuration
@@ -429,6 +479,10 @@ AC_DEFUN([SPL_AC_CONFIG], [
 	AM_CONDITIONAL([CONFIG_KERNEL],
 	               [test "$SPL_CONFIG" = kernel -o "$SPL_CONFIG" = all] &&
 	               [test "x$enable_linux_builtin" != xyes ])
+	AM_CONDITIONAL([CONFIG_HASH_MB],
+	               [test "$SPL_CONFIG" = kernel -o "$SPL_CONFIG" = all] &&
+	               [test "x$hash_mb_src" != x])
+
 ])
 
 dnl #
@@ -1389,6 +1443,25 @@ AC_DEFUN([SPL_AC_SCHED_RT_HEADER],
 		return 0;
 	],[
 		AC_DEFINE(HAVE_SCHED_RT_HEADER, 1, [linux/sched/rt.h exists])
+		AC_MSG_RESULT(yes)
+	],[
+		AC_MSG_RESULT(no)
+	])
+])
+
+dnl #
+dnl # 4.1 API change,
+dnl # Moved things from asm/i387.h to asm/fpu/api.h
+dnl #
+AC_DEFUN([SPL_AC_FPU_HEADER],
+	[AC_MSG_CHECKING([whether header asm/fpu/api.h exists])
+	SPL_LINUX_TRY_COMPILE([
+		#include <linux/types.h>
+		#include <asm/fpu/api.h>
+	],[
+		return 0;
+	],[
+		AC_DEFINE(HAVE_FPU_HEADER, 1, [asm/fpu/api.h exists])
 		AC_MSG_RESULT(yes)
 	],[
 		AC_MSG_RESULT(no)

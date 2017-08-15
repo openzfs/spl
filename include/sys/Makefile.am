@@ -54,6 +54,10 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/modctl.h \
 	$(top_srcdir)/include/sys/mode.h \
 	$(top_srcdir)/include/sys/mount.h \
+	$(top_srcdir)/include/sys/multi_buffer.h \
+	$(top_srcdir)/include/sys/mulbuf_queue_sha256.h \
+	$(top_srcdir)/include/sys/mulbuf_queue.h \
+	$(top_srcdir)/include/sys/mulbuf_thdpool.h \
 	$(top_srcdir)/include/sys/mutex.h \
 	$(top_srcdir)/include/sys/note.h \
 	$(top_srcdir)/include/sys/open.h \
@@ -70,6 +74,7 @@ KERNEL_H = \
 	$(top_srcdir)/include/sys/resource.h \
 	$(top_srcdir)/include/sys/rwlock.h \
 	$(top_srcdir)/include/sys/sdt.h \
+	$(top_srcdir)/include/sys/sha256_mb.h \
 	$(top_srcdir)/include/sys/sid.h \
 	$(top_srcdir)/include/sys/signal.h \
 	$(top_srcdir)/include/sys/stat.h \

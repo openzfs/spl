@@ -328,12 +328,56 @@ spl_basename(const char *s, const char **str, int *len)
 	*len = end + 1;
 }
 
+/*
+ * spl_dirname() takes a NULL-terminated string s as input containing a path.
+ * Returns pointer to a string containing the directory name or NULL
+ * on allocation failure. Returned pointer must be freed after use.
+ */
+
+static char *
+spl_dirname(const char *name)
+{
+	size_t i;
+
+	char *dirname = kmalloc(strlen(name), kmem_flags_convert(KM_SLEEP));
+	if (!dirname)
+		return dirname;
+
+	if (!name || !*name) {
+		dirname[0] = '.';
+		dirname[1] = '\0';
+		return dirname;
+	}
+
+	i = strlen(name) - 1;
+
+	while (i && name[i--] != '/');
+
+	if (i == 0) {
+		dirname[0] = '/';
+		dirname[1] = '\0';
+		return dirname;
+	}
+
+	++i;
+
+	dirname[i] = '\0';
+	while(i) {
+		--i;
+		dirname[i] = name[i];
+	}
+
+	return dirname;
+}
+
+
 static struct dentry *
 spl_kern_path_locked(const char *name, struct path *path)
 {
 	struct path parent;
 	struct dentry *dentry;
 	const char *basename;
+	char *dirname;
 	int len;
 	int rc;
 
@@ -347,9 +391,15 @@ spl_kern_path_locked(const char *name, struct path *path)
 		if (len == 1 || basename[1] == '.')
 			return (ERR_PTR(-EACCES));
 
-	rc = kern_path(name, LOOKUP_PARENT, &parent);
+	dirname = spl_dirname(name);
+	if (!dirname)
+			return (ERR_PTR(-ENOMEM));
+
+	rc = kern_path(dirname, LOOKUP_DIR, &parent);
 	if (rc)
 		return (ERR_PTR(rc));
+
+	kfree(dirname);
 
 	/* use I_MUTEX_PARENT because vfs_unlink needs it */
 	spl_inode_lock_nested(parent.dentry->d_inode, I_MUTEX_PARENT);

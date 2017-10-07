@@ -1671,6 +1671,8 @@ spl_kmem_cache_reap_now(spl_kmem_cache_t *skc, int count)
 	if (skc->skc_flags & KMC_SLAB) {
 		if (skc->skc_reclaim)
 			skc->skc_reclaim(skc->skc_private);
+
+		(void) kmem_cache_shrink(skc->skc_linux_cache);
 		goto out;
 	}
 

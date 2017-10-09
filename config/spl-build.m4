@@ -1,4 +1,4 @@
-###############################################################################
+##############################################################################
 # Copyright (C) 2007-2010 Lawrence Livermore National Security, LLC.
 # Copyright (C) 2007 The Regents of the University of California.
 # Written by Brian Behlendorf <behlendorf1@llnl.gov>.
@@ -54,6 +54,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_KMEM_CACHE_CREATE_USERCOPY
 	SPL_AC_WAIT_QUEUE_ENTRY_T
 	SPL_AC_WAIT_QUEUE_HEAD_ENTRY
+	SPL_AC_VFS_WRITE
 ])
 
 AC_DEFUN([SPL_AC_MODULE_SYMVERS], [
@@ -1691,6 +1692,21 @@ AC_DEFUN([SPL_AC_WAIT_QUEUE_HEAD_ENTRY], [
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_WAIT_QUEUE_HEAD_ENTRY, 1,
 		    [wq_head->head and wq_entry->entry exist])
+	],[
+		AC_MSG_RESULT(no)
+	])
+])
+
+dnl #
+dnl # 4.14 API change
+dnl # vfs_read/write not exported anymore -> use kernel_read/write
+dnl #
+AC_DEFUN([SPL_AC_VFS_WRITE], [
+	AC_MSG_CHECKING([whether vfs_write() is available])
+	SPL_CHECK_SYMBOL_EXPORT([vfs_write],
+	[],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_VFS_WRITE, 1, [yes])
 	],[
 		AC_MSG_RESULT(no)
 	])

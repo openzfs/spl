@@ -235,9 +235,17 @@ vn_rdwr(uio_rw_t uio, vnode_t *vp, void *addr, ssize_t len, offset_t off,
         set_fs(get_ds());
 
 	if (uio & UIO_WRITE)
+#ifdef HAVE_VFS_WRITE
 		rc = vfs_write(fp, addr, len, &offset);
+#else
+		rc = kernel_write(fp, addr, len, &offset);
+#endif /* HAVE_VFS_WRITE */
 	else
+#ifdef HAVE_VFS_WRITE
 		rc = vfs_read(fp, addr, len, &offset);
+#else
+		rc = kernel_read(fp, addr, len, &offset);
+#endif /* HAVE_VFS_WRITE */
 
 	set_fs(saved_fs);
 	fp->f_pos = offset;

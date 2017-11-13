@@ -29,6 +29,7 @@
 #include <sys/kmem_cache.h>
 #include <linux/falloc.h>
 #include <linux/file_compat.h>
+#include <linux/version.h>
 
 vnode_t *rootdir = (vnode_t *)0xabcd1234;
 EXPORT_SYMBOL(rootdir);
@@ -207,12 +208,46 @@ vn_openat(const char *path, uio_seg_t seg, int flags, int mode,
 } /* vn_openat() */
 EXPORT_SYMBOL(vn_openat);
 
+static ssize_t
+spl_kernel_write(struct file *file, const void *buf, size_t count, loff_t *pos)
+{
+#if defined(HAVE_KERNEL_WRITE)
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	return kernel_write(file, buf, count, pos);
+#else
+	return kernel_write(file, (char *)buf, count, *pos);
+#endif /* LINUX_VERSION_CODE */
+
+#else // We have to use the older vfs_write API
+	mm_segment_t old_fs;
+	ssize_t ret;
+
+	old_fs = get_fs();
+	set_fs(get_ds());
+	/* The cast to a user pointer is valid due to the set_fs() */
+	ret = vfs_write(file, (__force const char __user *)buf, count, pos);
+	set_fs(old_fs);
+
+	return ret;
+#endif /* HAVE_KERNEL_WRITE */
+}
+
+static ssize_t
+spl_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,14,0)
+	return kernel_read(file, buf, count, pos);
+#else /* kernel_read had a different API before 4.14.0, but it's been available since the earliest git release of Linux */
+	return kernel_read(file, *pos, (char *)buf, count);
+#endif
+}
+
 int
 vn_rdwr(uio_rw_t uio, vnode_t *vp, void *addr, ssize_t len, offset_t off,
 	uio_seg_t seg, int ioflag, rlim64_t x2, void *x3, ssize_t *residp)
 {
 	loff_t offset;
-	mm_segment_t saved_fs;
 	struct file *fp;
 	int rc;
 
@@ -228,18 +263,11 @@ vn_rdwr(uio_rw_t uio, vnode_t *vp, void *addr, ssize_t len, offset_t off,
 	if (ioflag & FAPPEND)
 		offset = fp->f_pos;
 
-	/* Writable user data segment must be briefly increased for this
-	 * process so we can use the user space read call paths to write
-	 * in to memory allocated by the kernel. */
-	saved_fs = get_fs();
-        set_fs(get_ds());
-
 	if (uio & UIO_WRITE)
-		rc = vfs_write(fp, addr, len, &offset);
+		rc = spl_kernel_write(fp, addr, len, &offset);
 	else
-		rc = vfs_read(fp, addr, len, &offset);
+		rc = spl_kernel_read(fp, addr, len, &offset);
 
-	set_fs(saved_fs);
 	fp->f_pos = offset;
 
 	if (rc < 0)

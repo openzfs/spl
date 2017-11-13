@@ -52,6 +52,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_KMEM_CACHE_CREATE_USERCOPY
 	SPL_AC_WAIT_QUEUE_ENTRY_T
 	SPL_AC_WAIT_QUEUE_HEAD_ENTRY
+	SPL_AC_KERNEL_WRITE
 ])
 
 AC_DEFUN([SPL_AC_MODULE_SYMVERS], [
@@ -1590,6 +1591,21 @@ AC_DEFUN([SPL_AC_WAIT_QUEUE_HEAD_ENTRY], [
 		AC_MSG_RESULT(yes)
 		AC_DEFINE(HAVE_WAIT_QUEUE_HEAD_ENTRY, 1,
 		    [wq_head->head and wq_entry->entry exist])
+	],[
+		AC_MSG_RESULT(no)
+	])
+])
+
+dnl #
+dnl # 3.9 API introduction
+dnl # kernel_write() as an improvement upon (and wrapper around) vfs_write()
+dnl #
+AC_DEFUN([SPL_AC_KERNEL_WRITE], [
+	AC_MSG_CHECKING([whether kernel_write() is exported])
+	SPL_CHECK_SYMBOL_EXPORT([kernel_write],
+	[],[
+		AC_MSG_RESULT(yes)
+		AC_DEFINE(HAVE_KERNEL_WRITE, 1, [yes])
 	],[
 		AC_MSG_RESULT(no)
 	])

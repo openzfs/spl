@@ -1035,10 +1035,18 @@ taskq_create(const char *name, int nthreads, pri_t pri,
 
 	/* Scale the number of threads using nthreads as a percentage */
 	if (flags & TASKQ_THREADS_CPU_PCT) {
+#if defined(__x86_64) && defined(__KERNEL__) && defined(HAVE_HASH_MB)
+		/* Eightfold threads maximum percentage of cpu */
+		ASSERT(nthreads <= 100 * 8);
+		ASSERT(nthreads >= 0);
+		nthreads = MIN(nthreads, 100 * 8);
+		nthreads = MAX(nthreads, 0);
+#else
 		ASSERT(nthreads <= 100);
 		ASSERT(nthreads >= 0);
 		nthreads = MIN(nthreads, 100);
 		nthreads = MAX(nthreads, 0);
+#endif
 		nthreads = MAX((num_online_cpus() * nthreads) / 100, 1);
 	}
 

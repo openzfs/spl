@@ -34,6 +34,7 @@
 #include <sys/mutex.h>
 #include <sys/rwlock.h>
 #include <sys/taskq.h>
+#include <sys/mulbuf_queue_sha256.h>
 #include <sys/tsd.h>
 #include <sys/zmod.h>
 #include <sys/debug.h>
@@ -703,10 +704,15 @@ spl_init(void)
 	if ((rc = spl_zlib_init()))
 		goto out10;
 
+	if ((rc = mulbuf_suite_sha256_init()))
+		goto out11;
+
 	printk(KERN_NOTICE "SPL: Loaded module v%s-%s%s\n", SPL_META_VERSION,
 	       SPL_META_RELEASE, SPL_DEBUG_STR);
 	return (rc);
 
+out11:
+	mulbuf_suite_sha256_fini();
 out10:
 	spl_kstat_fini();
 out9:
@@ -738,6 +744,7 @@ spl_fini(void)
 {
 	printk(KERN_NOTICE "SPL: Unloaded module v%s-%s%s\n",
 	       SPL_META_VERSION, SPL_META_RELEASE, SPL_DEBUG_STR);
+	mulbuf_suite_sha256_fini();
 	spl_zlib_fini();
 	spl_kstat_fini();
 	spl_proc_fini();

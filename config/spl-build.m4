@@ -20,6 +20,7 @@ AC_DEFUN([SPL_AC_CONFIG_KERNEL], [
 	SPL_AC_DEBUG
 	SPL_AC_DEBUG_KMEM
 	SPL_AC_DEBUG_KMEM_TRACKING
+	SPL_AC_DEBUG_LOCK_TRACKING
 	SPL_AC_TEST_MODULE
 	SPL_AC_ATOMIC_SPINLOCK
 	SPL_AC_SHRINKER_CALLBACK
@@ -157,7 +158,7 @@ AC_DEFUN([SPL_AC_KERNEL], [
 
 	if test "$utsrelease"; then
 		kernsrcver=`(echo "#include <$utsrelease>";
-		             echo "kernsrcver=UTS_RELEASE") | 
+		             echo "kernsrcver=UTS_RELEASE") |
 		             cpp -I $kernelbuild/include |
 		             grep "^kernsrcver=" | cut -d \" -f 2`
 
@@ -228,7 +229,7 @@ AC_DEFUN([SPL_AC_RPM], [
 		AC_MSG_RESULT([$HAVE_RPMBUILD])
 	])
 
-	RPM_DEFINE_COMMON='--define "$(DEBUG_SPL) 1" --define "$(DEBUG_KMEM) 1" --define "$(DEBUG_KMEM_TRACKING) 1"'
+	RPM_DEFINE_COMMON='--define "$(DEBUG_SPL) 1" --define "$(DEBUG_KMEM) 1" --define "$(DEBUG_KMEM_TRACKING) 1" --define "$(DEBUG_LOCK_TRACKING) 1"'
 	RPM_DEFINE_UTIL=
 	RPM_DEFINE_KMOD='--define "kernels $(LINUX_VERSION)"'
 	RPM_DEFINE_DKMS=
@@ -518,6 +519,33 @@ AC_DEFUN([SPL_AC_DEBUG_KMEM_TRACKING], [
 	AC_SUBST(DEBUG_KMEM_TRACKING)
 	AC_MSG_CHECKING([whether detailed kmem tracking is enabled])
 	AC_MSG_RESULT([$enable_debug_kmem_tracking])
+])
+
+dnl #
+dnl # Disabled by default it provides detailed lock liveness tracking.
+dnl # This feature tracks location of init() calls for kmutex_t, kcondvar_t and
+dnl # krwlock_t, and matching destroy calls. List of unmatched variables is
+dnl # kprint-ed on SPL module unload.
+dnl #
+AC_DEFUN([SPL_AC_DEBUG_LOCK_TRACKING], [
+	AC_ARG_ENABLE([debug-lock-tracking],
+		[AS_HELP_STRING([--enable-debug-lock-tracking],
+		[Enable detailed lock init/destroy tracking  @<:@default=no@:>@])],
+		[],
+		[enable_debug_lock_tracking=no])
+
+	AS_IF([test "x$enable_debug_lock_tracking" = xyes],
+	[
+		DEBUG_LOCK_TRACKING="_with_debug_lock_tracking"
+		AC_DEFINE([DEBUG_LOCK_TRACKING], [1],
+		[Define to 1 to enable detailed lock tracking])
+	], [
+		DEBUG_LOCK_TRACKING="_without_debug_lock_tracking"
+	])
+
+	AC_SUBST(DEBUG_LOCK_TRACKING)
+	AC_MSG_CHECKING([whether detailed lock init/destroy tracking is enabled])
+	AC_MSG_RESULT([$enable_debug_lock_tracking])
 ])
 
 dnl #

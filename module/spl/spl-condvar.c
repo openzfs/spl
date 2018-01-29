@@ -28,6 +28,17 @@
 #include <sys/time.h>
 #include <linux/hrtimer.h>
 
+int
+spl_condvar_init(void)
+{
+	return 0;
+}
+
+void
+spl_condvar_fini(void)
+{
+}
+
 void
 __cv_init(kcondvar_t *cvp, char *name, kcv_type_t type, void *arg)
 {

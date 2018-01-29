@@ -29,24 +29,29 @@
 #include <linux/mutex.h>
 #include <linux/compiler_compat.h>
 #include <linux/lockdep.h>
+#include <spl-lockdbg.h>
 
 typedef enum {
-	MUTEX_DEFAULT	= 0,
-	MUTEX_SPIN	= 1,
-	MUTEX_ADAPTIVE	= 2,
-	MUTEX_NOLOCKDEP	= 3
+	MUTEX_DEFAULT    = 0,      /* Normal */
+	MUTEX_NOLOCKDEP  = 1 << 0, /* No LockDep */
+	MUTEX_NOTRACKING = 1 << 1, /* No Tracking */
 } kmutex_type_t;
 
 typedef struct {
+	atomic_t		m_flags; /* use lower bits for sync counter */
 	struct mutex		m_mutex;
-	spinlock_t		m_lock;	/* used for serializing mutex_exit */
 	kthread_t		*m_owner;
-#ifdef CONFIG_LOCKDEP
-	kmutex_type_t		m_type;
-#endif /* CONFIG_LOCKDEP */
 } kmutex_t;
 
+/* Use upper portion of m_flags to store flags */
+#define	MUTEX_FLAG_NOLOCKDEP	((u32)1 << 31)
+#define	MUTEX_FLAG_NOTRACKING	((u32)1 << 30)
+#define	MUTEX_FLAG_MASK		(~(((u32)1 << 30) - 1))
+
 #define	MUTEX(mp)		(&((mp)->m_mutex))
+#define	MUTEX_FLAGS(mp)		(atomic_read(&(mp)->m_flags) & MUTEX_FLAG_MASK)
+#define	MUTEX_COUNTER(mp)	(&((mp)->m_flags))
+#define	MUTEX_COUNTER_VAL(mp)	(atomic_read(&(mp)->m_flags) & ~MUTEX_FLAG_MASK)
 
 static inline void
 spl_mutex_set_owner(kmutex_t *mp)
@@ -60,31 +65,67 @@ spl_mutex_clear_owner(kmutex_t *mp)
 	mp->m_owner = NULL;
 }
 
+static inline void
+spl_mutex_set_type(kmutex_t *mp, kmutex_type_t type)
+{
+	u32 t = 0;
+
+	ASSERT((type == MUTEX_DEFAULT) ||
+		((type & (MUTEX_NOLOCKDEP | MUTEX_NOTRACKING)) != 0));
+	/*
+	 * Mutex m_flags flag/counter bits:
+	 * bit 31 : NOLOCKDEP
+	 * bit 30 : NODEBUG
+	 * bits [29 - 0]: mutex_exit counter (m_flags & ~MUTEX_FLAG_MASK)
+	 */
+	if (type & MUTEX_NOLOCKDEP)
+		t |= MUTEX_FLAG_NOLOCKDEP;
+
+	if (type & MUTEX_NOTRACKING)
+		t |= MUTEX_FLAG_NOTRACKING;
+
+	atomic_set(&mp->m_flags, t & MUTEX_FLAG_MASK);
+}
+
+static inline kmutex_type_t
+spl_mutex_get_type(kmutex_t *mp)
+{
+	kmutex_type_t type = MUTEX_DEFAULT;
+	u32 flags = 0;
+
+	ASSERT3P(mp, !=, NULL);
+
+	flags = MUTEX_FLAGS(mp);
+
+	if (flags & MUTEX_FLAG_NOLOCKDEP)
+		type |= MUTEX_NOLOCKDEP;
+
+	if (flags & MUTEX_FLAG_NOTRACKING)
+		type |= MUTEX_NOTRACKING;
+
+	return type;
+}
+
 #define	mutex_owner(mp)		(ACCESS_ONCE((mp)->m_owner))
 #define	mutex_owned(mp)		(mutex_owner(mp) == current)
-#define	MUTEX_HELD(mp)		mutex_owned(mp)
+#define	MUTEX_HELD(mp)		(mutex_owned(mp))
 #define	MUTEX_NOT_HELD(mp)	(!MUTEX_HELD(mp))
 
 #ifdef CONFIG_LOCKDEP
 static inline void
-spl_mutex_set_type(kmutex_t *mp, kmutex_type_t type)
+spl_mutex_lockdep_off_maybe(kmutex_t *mp)
 {
-	mp->m_type = type;
+	if (mp && (spl_mutex_get_type(mp) & MUTEX_NOLOCKDEP))
+		lockdep_off();
 }
+
 static inline void
-spl_mutex_lockdep_off_maybe(kmutex_t *mp)			\
-{								\
-	if (mp && mp->m_type == MUTEX_NOLOCKDEP)		\
-		lockdep_off();					\
-}
-static inline void
-spl_mutex_lockdep_on_maybe(kmutex_t *mp)			\
-{								\
-	if (mp && mp->m_type == MUTEX_NOLOCKDEP)		\
-		lockdep_on();					\
+spl_mutex_lockdep_on_maybe(kmutex_t *mp)
+{
+	if (mp && (spl_mutex_get_type(mp) & MUTEX_NOLOCKDEP))
+		lockdep_on();
 }
 #else  /* CONFIG_LOCKDEP */
-#define spl_mutex_set_type(mp, type)
 #define spl_mutex_lockdep_off_maybe(mp)
 #define spl_mutex_lockdep_on_maybe(mp)
 #endif /* CONFIG_LOCKDEP */
@@ -95,60 +136,67 @@ spl_mutex_lockdep_on_maybe(kmutex_t *mp)			\
  * will be correctly located in the users code which is important
  * for the built in kernel lock analysis tools
  */
+
 #undef mutex_init
-#define	mutex_init(mp, name, type, ibc)				\
-{								\
-	static struct lock_class_key __key;			\
-	ASSERT(type == MUTEX_DEFAULT || type == MUTEX_NOLOCKDEP); \
-								\
-	__mutex_init(MUTEX(mp), (name) ? (#name) : (#mp), &__key); \
-	spin_lock_init(&(mp)->m_lock);				\
-	spl_mutex_clear_owner(mp);				\
-	spl_mutex_set_type(mp, type);				\
-}
+#define	mutex_init(mp, name, type, ibc)					\
+do {									\
+	static struct lock_class_key __key;				\
+									\
+	VERIFY3P((mp), !=, NULL);					\
+	__mutex_init(MUTEX(mp), name, &__key);				\
+	spl_mutex_clear_owner(mp);					\
+	spl_mutex_set_type(mp, type);					\
+									\
+	spl_lock_tracking_record_init(SLT_MUTEX, (ulong_t)mp,		\
+	    OBJ_INIT_LOC);						\
+} while(0)
 
-#undef mutex_destroy
-#define	mutex_destroy(mp)					\
-{								\
-	VERIFY3P(mutex_owner(mp), ==, NULL);			\
-}
-
-#define	mutex_tryenter(mp)					\
-({								\
-	int _rc_;						\
-								\
-	spl_mutex_lockdep_off_maybe(mp);			\
-	if ((_rc_ = mutex_trylock(MUTEX(mp))) == 1)		\
-		spl_mutex_set_owner(mp);			\
-	spl_mutex_lockdep_on_maybe(mp);				\
-								\
-	_rc_;							\
+#define	mutex_tryenter(mp)						\
+({									\
+	int _rc_;							\
+									\
+	spl_mutex_lockdep_off_maybe(mp);				\
+	if ((_rc_ = mutex_trylock(MUTEX(mp))) == 1)			\
+		spl_mutex_set_owner(mp);				\
+	spl_mutex_lockdep_on_maybe(mp);					\
+									\
+	_rc_;								\
 })
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
-#define	mutex_enter_nested(mp, subclass)			\
-{								\
-	ASSERT3P(mutex_owner(mp), !=, current);			\
-	spl_mutex_lockdep_off_maybe(mp);			\
-	mutex_lock_nested(MUTEX(mp), (subclass));		\
-	spl_mutex_lockdep_on_maybe(mp);				\
-	spl_mutex_set_owner(mp);				\
-}
+#define	mutex_enter_nested(mp, subclass)				\
+do {									\
+	ASSERT3P(mutex_owner(mp), !=, current);				\
+	spl_mutex_lockdep_off_maybe(mp);				\
+	mutex_lock_nested(MUTEX(mp), (subclass));			\
+	spl_mutex_lockdep_on_maybe(mp);					\
+	spl_mutex_set_owner(mp);					\
+} while(0)
 #else /* CONFIG_DEBUG_LOCK_ALLOC */
-#define	mutex_enter_nested(mp, subclass)			\
-{								\
-	ASSERT3P(mutex_owner(mp), !=, current);			\
-	spl_mutex_lockdep_off_maybe(mp);			\
-	mutex_lock(MUTEX(mp));					\
-	spl_mutex_lockdep_on_maybe(mp);				\
-	spl_mutex_set_owner(mp);				\
-}
+#define	mutex_enter_nested(mp, subclass)				\
+do {									\
+	ASSERT3P(mutex_owner(mp), !=, current);				\
+	spl_mutex_lockdep_off_maybe(mp);				\
+	mutex_lock(MUTEX(mp));						\
+	spl_mutex_lockdep_on_maybe(mp);					\
+	spl_mutex_set_owner(mp);					\
+} while(0)
 #endif /*  CONFIG_DEBUG_LOCK_ALLOC */
 
 #define	mutex_enter(mp) mutex_enter_nested((mp), 0)
 
+#define	mutex_exit(mp)							\
+do {									\
+	spl_mutex_clear_owner(mp);					\
+	atomic_inc(MUTEX_COUNTER(mp));					\
+	spl_mutex_lockdep_off_maybe(mp);				\
+	mutex_unlock(MUTEX(mp));					\
+	spl_mutex_lockdep_on_maybe(mp);					\
+	atomic_dec(MUTEX_COUNTER(mp));					\
+} while(0)
+
 /*
- * The reason for the spinlock:
+ * The reason for the spinning in mutex_destroy():
  *
  * The Linux mutex is designed with a fast-path/slow-path design such that it
  * does not guarantee serialization upon itself, allowing a race where latter
@@ -161,21 +209,23 @@ spl_mutex_lockdep_on_maybe(kmutex_t *mp)			\
  *
  * However, there are many places in ZFS where the mutex is used for
  * serializing object freeing, and the code is shared among other OSes without
- * this issue. Thus, we need the spinlock to force the serialization on
- * mutex_exit().
+ * this issue. Thus, we need to spin in mutex_destroy() until we're sure that
+ * all threads have finished slow-path in mutex_exit(), avoiding use-after-free.
  *
  * See http://lwn.net/Articles/575477/ for the information about the race.
  */
-#define	mutex_exit(mp)						\
-{								\
-	spl_mutex_clear_owner(mp);				\
-	spin_lock(&(mp)->m_lock);				\
-	spl_mutex_lockdep_off_maybe(mp);			\
-	mutex_unlock(MUTEX(mp));				\
-	spl_mutex_lockdep_on_maybe(mp);				\
-	spin_unlock(&(mp)->m_lock);				\
-	/* NOTE: do not dereference mp after this point */	\
-}
+
+#undef mutex_destroy
+#define mutex_destroy(mp)						\
+{									\
+	VERIFY3P(mutex_owner(mp), ==, NULL);				\
+									\
+	while (MUTEX_COUNTER_VAL(mp) != 0)				\
+		cpu_relax();						\
+									\
+	spl_lock_tracking_record_destroy(SLT_MUTEX, (ulong_t)mp,	\
+	    OBJ_INIT_LOC);						\
+} while(0)
 
 int spl_mutex_init(void);
 void spl_mutex_fini(void);

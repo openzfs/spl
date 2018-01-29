@@ -31,6 +31,7 @@
 #include <sys/kmem.h>
 #include <sys/mutex.h>
 #include <sys/callo.h>
+#include <spl-lockdbg.h>
 
 /*
  * The kcondvar_t struct is protected by mutex taken externally before
@@ -65,8 +66,20 @@ extern clock_t cv_timedwait_sig_hires(kcondvar_t *, kmutex_t *, hrtime_t,
 extern void __cv_signal(kcondvar_t *);
 extern void __cv_broadcast(kcondvar_t *c);
 
-#define	cv_init(cvp, name, type, arg)		__cv_init(cvp, name, type, arg)
-#define	cv_destroy(cvp)				__cv_destroy(cvp)
+#define	cv_init(cvp, name, type, arg)					\
+do {									\
+	__cv_init(cvp, name, type, arg);				\
+	spl_lock_tracking_record_init(SLT_CONDVAR, (ulong_t)cvp,	\
+	    OBJ_INIT_LOC);						\
+} while (0)
+
+#define	cv_destroy(cvp)							\
+do {									\
+	__cv_destroy(cvp);						\
+	spl_lock_tracking_record_destroy(SLT_CONDVAR, (ulong_t)cvp,	\
+	    OBJ_INIT_LOC);						\
+} while (0)
+
 #define	cv_wait(cvp, mp)			__cv_wait(cvp, mp)
 #define	cv_wait_io(cvp, mp)			__cv_wait_io(cvp, mp)
 #define	cv_wait_sig(cvp, mp)			__cv_wait_sig(cvp, mp)
@@ -77,5 +90,9 @@ extern void __cv_broadcast(kcondvar_t *c);
 #define	cv_timedwait_interruptible(cvp, mp, t)	cv_timedwait_sig(cvp, mp, t)
 #define	cv_signal(cvp)				__cv_signal(cvp)
 #define	cv_broadcast(cvp)			__cv_broadcast(cvp)
+
+
+int spl_condvar_init(void);
+void spl_condvar_fini(void);
 
 #endif /* _SPL_CONDVAR_H */

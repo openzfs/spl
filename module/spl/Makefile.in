@@ -28,3 +28,4 @@ $(MODULE)-objs += spl-xdr.o
 $(MODULE)-objs += spl-cred.o
 $(MODULE)-objs += spl-tsd.o
 $(MODULE)-objs += spl-zlib.o
+$(MODULE)-objs += spl-lockdbg.o

@@ -30,6 +30,7 @@
 #include <sys/kmem_cache.h>
 #include <sys/vmem.h>
 #include <sys/taskq.h>
+#include <spl-lockdbg.h>
 #include <linux/ctype.h>
 #include <linux/kmod.h>
 #include <linux/seq_file.h>
@@ -52,6 +53,14 @@ static struct proc_dir_entry *proc_spl_kmem = NULL;
 static struct proc_dir_entry *proc_spl_kmem_slab = NULL;
 static struct proc_dir_entry *proc_spl_taskq_all = NULL;
 static struct proc_dir_entry *proc_spl_taskq = NULL;
+
+#ifdef DEBUG_LOCK_TRACKING
+static struct proc_dir_entry *proc_spl_debug = NULL;
+static struct proc_dir_entry *proc_spl_debug_rwlock = NULL;
+static struct proc_dir_entry *proc_spl_debug_mutex = NULL;
+static struct proc_dir_entry *proc_spl_debug_condvar = NULL;
+#endif
+
 struct proc_dir_entry *proc_spl_kstat = NULL;
 
 static int
@@ -713,6 +722,37 @@ spl_proc_init(void)
 		goto out;
 	}
 
+#ifdef DEBUG_LOCK_TRACKING
+
+	proc_spl_debug = proc_mkdir("debug", proc_spl);
+	if (proc_spl_debug == NULL) {
+		rc = -EUNATCH;
+		goto out;
+	}
+
+    proc_spl_debug_mutex = proc_create_data("mutex_tracking", 0444,
+        proc_spl_debug, &proc_mutex_tracking_operations, NULL);
+    if (proc_spl_debug_mutex == NULL) {
+        rc = -EUNATCH;
+        goto out;
+    }
+
+	proc_spl_debug_rwlock = proc_create_data("rwlock_tracking", 0444,
+        proc_spl_debug, &proc_rwlock_tracking_operations, NULL);
+	if (proc_spl_debug_rwlock == NULL) {
+		rc = -EUNATCH;
+		goto out;
+	}
+
+	proc_spl_debug_condvar = proc_create_data("condvar_tracking", 0444,
+        proc_spl_debug, &proc_condvar_tracking_operations, NULL);
+	if (proc_spl_debug_condvar == NULL) {
+		rc = -EUNATCH;
+		goto out;
+	}
+
+#endif /* DEBUG_LOCK_TRACKING */
+
 	proc_spl_taskq_all = proc_create_data("taskq-all", 0444,
 		proc_spl, &proc_taskq_all_operations, NULL);
 	if (proc_spl_taskq_all == NULL) {
@@ -748,12 +788,18 @@ spl_proc_init(void)
 out:
 	if (rc) {
 		remove_proc_entry("kstat", proc_spl);
-	        remove_proc_entry("slab", proc_spl_kmem);
+		remove_proc_entry("slab", proc_spl_kmem);
 		remove_proc_entry("kmem", proc_spl);
 		remove_proc_entry("taskq-all", proc_spl);
 		remove_proc_entry("taskq", proc_spl);
+#ifdef DEBUG_LOCK_TRACKING
+		remove_proc_entry("mutex_tracking", proc_spl_debug);
+		remove_proc_entry("rwlock_tracking", proc_spl_debug);
+        remove_proc_entry("condvar_tracking", proc_spl_debug);
+		remove_proc_entry("debug", proc_spl);
+#endif
 		remove_proc_entry("spl", NULL);
-	        unregister_sysctl_table(spl_header);
+		unregister_sysctl_table(spl_header);
 	}
 
         return (rc);
@@ -767,6 +813,12 @@ spl_proc_fini(void)
 	remove_proc_entry("kmem", proc_spl);
 	remove_proc_entry("taskq-all", proc_spl);
 	remove_proc_entry("taskq", proc_spl);
+#ifdef DEBUG_LOCK_TRACKING
+	remove_proc_entry("condvar_tracking", proc_spl_debug);
+	remove_proc_entry("mutex_tracking", proc_spl_debug);
+	remove_proc_entry("rwlock_tracking", proc_spl_debug);
+	remove_proc_entry("debug", proc_spl);
+#endif
 	remove_proc_entry("spl", NULL);
 
         ASSERT(spl_header != NULL);

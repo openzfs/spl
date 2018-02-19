@@ -556,7 +556,7 @@ hostid_read(uint32_t *hostid)
 	int error;
 
 	file = kobj_open_file(spl_hostid_path);
-	if (file == (struct _buf *)-1)
+	if (PTR_ERR(file) == -1)
 		return (ENOENT);
 
 	error = kobj_get_filesize(file, &size);

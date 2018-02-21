@@ -46,7 +46,7 @@ splat_kobj_test1(struct file *file, void *arg)
 	struct _buf *f;
 
 	f = kobj_open_file(SPLAT_KOBJ_TEST_FILE);
-	if (f == (struct _buf *)-1) {
+	if (PTR_ERR(f) == -1) {
 		splat_vprint(file, SPLAT_KOBJ_TEST1_NAME, "Failed to open "
 			     "test file: %s\n", SPLAT_KOBJ_TEST_FILE);
 		return -ENOENT;
@@ -68,7 +68,7 @@ splat_kobj_test2(struct file *file, void *arg)
 	int rc;
 
 	f = kobj_open_file(SPLAT_KOBJ_TEST_FILE);
-	if (f == (struct _buf *)-1) {
+	if (PTR_ERR(f) == -1) {
 		splat_vprint(file, SPLAT_KOBJ_TEST2_NAME, "Failed to open "
 			     "test file: %s\n", SPLAT_KOBJ_TEST_FILE);
 		return -ENOENT;

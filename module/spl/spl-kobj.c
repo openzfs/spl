@@ -35,11 +35,11 @@ kobj_open_file(const char *name)
 
 	file = kmalloc(sizeof (_buf_t), kmem_flags_convert(KM_SLEEP));
 	if (file == NULL)
-		return ((_buf_t *)-1UL);
+		return (ERR_PTR(-1));
 
 	if ((rc = vn_open(name, UIO_SYSSPACE, FREAD, 0644, &vp, 0, 0))) {
 		kfree(file);
-		return ((_buf_t *)-1UL);
+		return (ERR_PTR(-1));
 	}
 
 	file->vp = vp;

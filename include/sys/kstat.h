@@ -73,6 +73,22 @@
 	(KSTAT_FLAG_VAR_SIZE | KSTAT_FLAG_WRITABLE | \
 	KSTAT_FLAG_PERSISTENT | KSTAT_FLAG_DORMANT)
 
+/*
+ * The normal kstat output includes two metadata headers before the actual
+ * value:
+ *
+ *     $ cat /proc/spl/kstat/zfs/foo
+ *     31 0 0x01 1 0 1336141223666 1816471471871
+ *     raw value
+ *     foo
+ *
+ * You can omit those headers by setting KSTAT_FLAG_NO_HEADERS:
+ *
+ *     $ cat /proc/spl/kstat/zfs/foo
+ *     foo
+ *
+ */
+#define KSTAT_FLAG_NO_HEADERS	0x20
 
 #define	KS_MAGIC		0x9d9d9d9d
 

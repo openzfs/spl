@@ -388,7 +388,8 @@ kstat_seq_start(struct seq_file *f, loff_t *pos)
 
 	ksp->ks_snaptime = gethrtime();
 
-	if (!n && kstat_seq_show_headers(f))
+	if (!(ksp->ks_flags & KSTAT_FLAG_NO_HEADERS) && !n &&
+	    kstat_seq_show_headers(f))
 		return (NULL);
 
 	if (n >= ksp->ks_ndata)

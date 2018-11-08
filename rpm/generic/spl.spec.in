@@ -20,6 +20,9 @@ Source0:        %{name}-%{version}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 Requires:       %{name}-kmod = %{version}
 Provides:       %{name}-kmod-common = %{version}
+%if 0%{?rhel}%{?fedora}%{?suse_version}
+BuildRequires:  gcc, make
+%endif
 
 %description
 This package contains the commands to verify the SPL

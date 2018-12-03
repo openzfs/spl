@@ -156,7 +156,7 @@ AC_DEFUN([SPL_AC_KERNEL], [
 	if test "$utsrelease"; then
 		kernsrcver=`(echo "#include <$utsrelease>";
 		             echo "kernsrcver=UTS_RELEASE") | 
-		             cpp -I $kernelbuild/include |
+		             ${CPP} -I $kernelbuild/include - |
 		             grep "^kernsrcver=" | cut -d \" -f 2`
 
 		if test -z "$kernsrcver"; then

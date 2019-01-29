@@ -8,19 +8,19 @@ SPL_MODULE_CFLAGS += -include @abs_top_builddir@/spl_config.h
 export SPL_MODULE_CFLAGS
 
 modules:
-	$(MAKE) -C @LINUX_OBJ@ SUBDIRS=`pwd` @KERNELMAKE_PARAMS@ CONFIG_SPL=m $@
+	$(MAKE) -C @LINUX_OBJ@ M=`pwd` @KERNELMAKE_PARAMS@ CONFIG_SPL=m $@
 
 clean:
 	@# Only cleanup the kernel build directories when CONFIG_KERNEL
 	@# is defined.  This indicates that kernel modules should be built.
-@CONFIG_KERNEL_TRUE@	$(MAKE) -C @LINUX_OBJ@ SUBDIRS=`pwd` @KERNELMAKE_PARAMS@ $@
+@CONFIG_KERNEL_TRUE@	$(MAKE) -C @LINUX_OBJ@ M=`pwd` @KERNELMAKE_PARAMS@ $@
 
 	if [ -f @LINUX_SYMBOLS@ ]; then $(RM) @LINUX_SYMBOLS@; fi
 	if [ -f Module.markers ]; then $(RM) Module.markers; fi
 
 modules_install:
 	@# Install the kernel modules
-	$(MAKE) -C @LINUX_OBJ@ SUBDIRS=`pwd` $@ \
+	$(MAKE) -C @LINUX_OBJ@ M=`pwd` $@ \
 		INSTALL_MOD_PATH=$(DESTDIR)$(INSTALL_MOD_PATH) \
 		INSTALL_MOD_DIR=$(INSTALL_MOD_DIR) \
 		KERNELRELEASE=@LINUX_VERSION@

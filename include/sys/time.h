@@ -57,6 +57,17 @@ typedef struct timespec		timespec_t;
 
 static const int hz = HZ;
 
+/* 5.0 kernels no longer have timespec_sub(), only timespec64_sub() */
+#if !defined(HAVE_KERNEL_TIMESPEC_SUB) && defined(HAVE_INODE_TIMESPEC64_TIMES)
+static inline struct timespec timespec_sub(struct timespec a,
+    struct timespec b) {
+	struct timespec64 res;
+	res = timespec64_sub(timespec_to_timespec64(a),
+	    timespec_to_timespec64(b));
+	return timespec64_to_timespec(res);
+}
+#endif
+
 #define	TIMESPEC_OVERFLOW(ts)		\
 	((ts)->tv_sec < TIME_MIN || (ts)->tv_sec > TIME_MAX)
 

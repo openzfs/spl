@@ -30,6 +30,7 @@
 #include <sys/random.h>
 #include <sys/thread.h>
 #include <sys/vmsystm.h>
+#include <sys/time.h>
 #include "splat-internal.h"
 
 #define SPLAT_KMEM_NAME			"kmem"

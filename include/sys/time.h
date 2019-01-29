@@ -27,6 +27,7 @@
 
 #include <linux/module.h>
 #include <linux/time.h>
+#include <linux/ktime.h>
 #include <sys/types.h>
 #include <sys/timer.h>
 
@@ -95,6 +96,19 @@ gethrestime(inode_timespec_t *ts)
 	*ts = current_kernel_time();
 #endif
 }
+
+/*
+ * 4.20 kernels no longer have current_kernel_time(), only
+ * current_kernel_time64().
+ */
+#if !defined(HAVE_KERNEL_CURRENT_TIME) && defined(HAVE_INODE_TIMESPEC64_TIMES)
+static inline struct timespec current_kernel_time(void)
+{
+	struct timespec64 ts;
+	gethrestime(&ts);
+	return timespec64_to_timespec(ts);
+}
+#endif
 
 static inline time_t
 gethrestime_sec(void)

@@ -29,6 +29,11 @@
 #include <sys/kmem_cache.h>
 #include <linux/falloc.h>
 #include <linux/file_compat.h>
+#include <linux/version.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
+#define get_ds()	((mm_segment_t) { (-1UL) })
+#endif
 
 vnode_t *rootdir = (vnode_t *)0xabcd1234;
 EXPORT_SYMBOL(rootdir);
